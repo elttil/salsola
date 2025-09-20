@@ -211,45 +211,6 @@ int mmu_init(void *multiboot_header) {
   heap_end = align_up(&_kernel_end, 0x1000);
   heap_end = (void *)((uintptr_t)heap_end + 0x1000);
 
-  for (size_t i = 0; i < 512; i++) {
-    uintptr_t p = kernel->physical[i] + 0xFFFFFF8000000000;
-    if (!(p & PAGE_FLAG_PRESENT)) {
-      // TODO: Do we need to NULL them?
-      //      second->pdpt[i] = NULL;
-      continue;
-    }
-
-    struct PDPT *pdpt = (struct PDPT *)(p & ~(0xFFF));
-    kernel->pdpt[i] = pdpt;
-
-    for (size_t j = 0; j < 512; j++) {
-      //      uintptr_t physical = pdpt->physical[j] & ~(0xFFF);
-
-      uintptr_t p = pdpt->physical[j] + 0xFFFFFF8000000000;
-      if (!(p & PAGE_FLAG_PRESENT)) {
-        continue;
-      }
-      struct PDT *pdt = (struct PDT *)(p & ~(0xFFF));
-      pdpt->pdt[j] = pdt;
-      for (size_t c = 0; c < 512; c++) {
-        //        uintptr_t physical = pdt->physical[c] & ~(0xFFF);
-
-        uintptr_t p = pdt->physical[c] + 0xFFFFFF8000000000;
-        if (!(p & PAGE_FLAG_PRESENT)) {
-          continue;
-        }
-        struct PT *pt = (struct PT *)(p & ~(0xFFF));
-        pdt->pt[c] = pt;
-        for (int k = 0; k < 512; k++) {
-          //          uintptr_t physical = pt->page[k] & ~(0xFFF);
-        }
-      }
-    }
-  }
-
-  kernel->pdpt[0] = NULL;
-  kernel->physical[0] = (uintptr_t)NULL;
-
   memset(frames, 0xFF, sizeof(frames));
 
   uintptr_t addr = (uintptr_t)multiboot_header + 0xFFFFFF8000000000;
@@ -262,8 +223,6 @@ int mmu_init(void *multiboot_header) {
     }
 
     struct multiboot_tag_mmap *m = (struct multiboot_tag_mmap *)tag;
-    kprintf("m->entry_size: %u\n", m->entry_size);
-    kprintf("m->size: %u\n", m->size);
 
     // FIXME: WARNING: Check if it actually should be m->size/m->entry_size
     // It could cause a lot of bugs if this is incorrect.
@@ -280,6 +239,46 @@ int mmu_init(void *multiboot_header) {
       assert(0 == entry->zero);
     }
   }
+
+  for (size_t i = 0; i < 512; i++) {
+    uintptr_t p = kernel->physical[i] + 0xFFFFFF8000000000;
+    if (!(p & PAGE_FLAG_PRESENT)) {
+      continue;
+    }
+
+    struct PDPT *pdpt = (struct PDPT *)(p & ~(0xFFF));
+    kernel->pdpt[i] = pdpt;
+
+    for (size_t j = 0; j < 512; j++) {
+      uintptr_t physical = pdpt->physical[j] & ~(0xFFF);
+      set_frame(physical, true);
+
+      uintptr_t p = pdpt->physical[j] + 0xFFFFFF8000000000;
+      if (!(p & PAGE_FLAG_PRESENT)) {
+        continue;
+      }
+      struct PDT *pdt = (struct PDT *)(p & ~(0xFFF));
+      pdpt->pdt[j] = pdt;
+      for (size_t c = 0; c < 512; c++) {
+        uintptr_t physical = pdt->physical[c] & ~(0xFFF);
+        set_frame(physical, true);
+
+        uintptr_t p = pdt->physical[c] + 0xFFFFFF8000000000;
+        if (!(p & PAGE_FLAG_PRESENT)) {
+          continue;
+        }
+        struct PT *pt = (struct PT *)(p & ~(0xFFF));
+        pdt->pt[c] = pt;
+        for (int k = 0; k < 512; k++) {
+          uintptr_t physical = pt->page[k] & ~(0xFFF);
+          set_frame(physical, true);
+        }
+      }
+    }
+  }
+
+  kernel->pdpt[0] = NULL;
+  kernel->physical[0] = (uintptr_t)NULL;
 
   void *l = ksbrk_physical(0x10000, NULL, 0);
   kprintf("l: %x\n", l);
