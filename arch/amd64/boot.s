@@ -181,6 +181,6 @@ Realm64:
 ;    loop .Screen               ; Set the next entry.
 
 loop:
+;	cli
 	hlt
-	cli
 	jmp loop

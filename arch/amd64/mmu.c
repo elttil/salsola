@@ -64,13 +64,15 @@ uint64_t pow(uint64_t a, uint64_t b) {
 
 struct PML4T *kernel;
 
-uint64_t frames[256];
+#define NUM_OF_FRAMES 256
+
+uint64_t frames[NUM_OF_FRAMES];
 size_t num_pages = 0;
 
 static inline void set_frame(uintptr_t address, bool state) {
   address /= 0x1000;
   size_t index = address / 64;
-  if (index >= 256) {
+  if (index >= NUM_OF_FRAMES) {
     return;
   }
   size_t offset = address % 64;
@@ -82,7 +84,7 @@ static inline void set_frame(uintptr_t address, bool state) {
 }
 
 void *get_frame(bool allocate) {
-  for (size_t i = 0; i < 256; i++) {
+  for (size_t i = 0; i < NUM_OF_FRAMES; i++) {
     if (~((uint64_t)0) == frames[i]) {
       continue;
     }
@@ -107,7 +109,12 @@ void allocate_next_pdt(void *address);
 
 void *heap_end;
 
-void *ksbrk_physical(size_t length, void **physical, int a) {
+// void *mmu_allocate_free_virutal_region(size_t length) {
+// }
+
+// FIXME: WARNING: The allocation is not guaranteed to be linear in the
+// physical memory mapping.
+void *ksbrk_physical(size_t length, void **physical, bool a) {
   void *rc = heap_end;
   if (!a) {
     allocate_next_pdt(heap_end);
@@ -116,6 +123,7 @@ void *ksbrk_physical(size_t length, void **physical, int a) {
   void *r = NULL;
   for (size_t i = 0; i < length; i += 0x1000) {
     void *l = allocate_address(heap_end);
+    assert(l);
     if (!r) {
       r = l;
     }
@@ -125,6 +133,47 @@ void *ksbrk_physical(size_t length, void **physical, int a) {
     *physical = r;
   }
   return rc;
+}
+
+void *ksbrk(size_t length) {
+  return ksbrk_physical(length, NULL, false);
+}
+
+void *mmu_virtual_to_physical(void *address) {
+  const int PT_SHIFT = 12;
+  const int PDT_SHIFT = 12 + 9 * 1;
+  const int PDPT_SHIFT = 12 + 9 * 2;
+  const int PML4_SHIFT = 12 + 9 * 3;
+
+  uint64_t pml4t_index = ((uintptr_t)address >> PML4_SHIFT) & 0x1FF;
+  uint64_t pdpt_index = ((uintptr_t)address >> PDPT_SHIFT) & 0x1FF;
+  uint64_t pdt_index = ((uintptr_t)address >> PDT_SHIFT) & 0x1FF;
+  uint64_t pt_index = ((uintptr_t)address >> PT_SHIFT) & 0x1FF;
+
+  if (!(kernel->physical[pml4t_index] & PAGE_FLAG_PRESENT)) {
+    return NULL;
+  }
+  if (!(kernel->pdpt[pml4t_index]->physical[pdpt_index] & PAGE_FLAG_PRESENT)) {
+    return NULL;
+  }
+  if (!(kernel->pdpt[pml4t_index]->pdt[pdpt_index]->physical[pdt_index] &
+        PAGE_FLAG_PRESENT)) {
+    return NULL;
+  }
+  if (!(kernel->physical[pml4t_index] & PAGE_FLAG_PRESENT)) {
+    return NULL;
+  }
+
+  uintptr_t p =
+      kernel->pdpt[pml4t_index]->pdt[pdpt_index]->pt[pdt_index]->page[pt_index];
+
+  if (!(p & PAGE_FLAG_PRESENT)) {
+    return NULL;
+  }
+
+  p &= ~(0xFFF);
+  p |= (uintptr_t)address & 0xFFF;
+  return (void *)p;
 }
 
 void allocate_next_pdt(void *address) {
@@ -140,7 +189,6 @@ void allocate_next_pdt(void *address) {
 
   if (!(kernel->pdpt[pml4t_index]->pdt[pdpt_index]->physical[pdt_index] &
         PAGE_FLAG_PRESENT)) {
-    kprintf("ALLOCATE PDT FIRST %d\n", pdt_index);
     void *physical;
     void *address = ksbrk_physical(sizeof(struct PT), &physical, 1);
 
@@ -151,7 +199,6 @@ void allocate_next_pdt(void *address) {
   pdt_index++;
   if (!(kernel->pdpt[pml4t_index]->pdt[pdpt_index]->physical[pdt_index] &
         PAGE_FLAG_PRESENT)) {
-    kprintf("ALLOCATE PDT SECOND %d\n", pdt_index);
     void *physical;
     void *address = ksbrk_physical(sizeof(struct PT), &physical, 1);
 
@@ -161,7 +208,8 @@ void allocate_next_pdt(void *address) {
   }
 }
 
-void *allocate_address(void *address) {
+bool check_virtual_region_is_free(void *address, void **physical,
+                                  bool allocate) {
   const int PT_SHIFT = 12;
   const int PDT_SHIFT = 12 + 9 * 1;
   const int PDPT_SHIFT = 12 + 9 * 2;
@@ -174,38 +222,52 @@ void *allocate_address(void *address) {
 
   if (!(kernel->physical[pml4t_index] & 0x1)) {
     kprintf("ERROR 1\n");
-    return NULL;
+    assert(!allocate);
+    return false;
   }
   if (!(kernel->pdpt[pml4t_index]->physical[pdpt_index] & 0x1)) {
     kprintf("ERROR 2\n");
-    return NULL;
+    assert(!allocate);
+    return false;
   }
   if (!(kernel->pdpt[pml4t_index]->pdt[pdpt_index]->physical[pdt_index] &
         0x1)) {
-    kprintf("ALLOCATE PDT\n");
+    if (!allocate) {
+      return false;
+    }
     void *physical;
     void *address = ksbrk_physical(sizeof(struct PT), &physical, 0);
+    memset(address, 0, sizeof(struct PT));
 
     kernel->pdpt[pml4t_index]->pdt[pdpt_index]->physical[pdt_index] =
         (uintptr_t)physical & 0x3;
     kernel->pdpt[pml4t_index]->pdt[pdpt_index]->pt[pdt_index] = address;
   }
 
-  uintptr_t *physical = &kernel->pdpt[pml4t_index]
-                             ->pdt[pdpt_index]
-                             ->pt[pdt_index]
-                             ->page[pt_index];
+  void **p = (void **)&kernel->pdpt[pml4t_index]
+                 ->pdt[pdpt_index]
+                 ->pt[pdt_index]
+                 ->page[pt_index];
 
-  if (!(*physical & 0x1)) {
-    *physical = (uintptr_t)get_frame(true);
-    *physical |= 0x3;
+  if (allocate) {
+    *p = get_frame(true);
+    *p = (void *)((uintptr_t)*p | 0x3);
   }
-  return (void *)((*physical) & ~(0xFFF));
+
+  if (physical) {
+    *physical = *p;
+  }
+
+  return ((((uintptr_t)*p) & PAGE_FLAG_PRESENT));
+}
+
+void *allocate_address(void *address) {
+  void *physical;
+  assert(check_virtual_region_is_free(address, &physical, true));
+  return (void *)((uintptr_t)physical & ~(0xFFF));
 }
 
 int mmu_init(void *multiboot_header) {
-  // 0xffffff8000000000
-
   kernel = (struct PML4T *)(((uintptr_t)&PML4T) + 0xffffff8000000000);
 
   heap_end = align_up(&_kernel_end, 0x1000);
@@ -279,13 +341,6 @@ int mmu_init(void *multiboot_header) {
 
   kernel->pdpt[0] = NULL;
   kernel->physical[0] = (uintptr_t)NULL;
-
-  void *l = ksbrk_physical(0x10000, NULL, 0);
-  kprintf("l: %x\n", l);
-  memset(l, 0x41, 0x1000);
-  l = ksbrk_physical(0x200000, NULL, 0);
-  kprintf("l: %x\n", l);
-  memset(l, 0x41, 0x200000);
 
   return 1;
 }
