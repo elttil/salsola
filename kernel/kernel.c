@@ -9,11 +9,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <arch/amd64/gdt.h>
 #include <arch/amd64/idt.h>
 
 #include "multiboot2.h"
 
 void kmain(unsigned long magic, void *arg) {
+  gdt_init();
+
   csprng_init();
   prng_init();
 
