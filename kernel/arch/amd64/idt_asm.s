@@ -10,11 +10,17 @@ global set_sbp
 global goto_function_with_stack
 
 goto_function_with_stack:
+	mov r9, rsp
+	mov r10, rbp
 	mov rsp, rsi
 	mov rbp, rsi
+	push r9
+	push r10
 	call rdi
-loop:
-	jmp loop
+	pop r10
+	pop r9
+	mov rbp, r10
+	mov rsp, r9
 	ret
 
 get_current_sp:

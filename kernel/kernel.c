@@ -22,12 +22,14 @@ void kmain2(void) {
 
   ahci_init();
   kprintf("Hello, world!\n");
-  for (;;)
-    ;
-  return;
 }
 
 void kmain(u32 magic, void *arg) {
+  if (MULTIBOOT2_BOOTLOADER_MAGIC != magic) {
+    kprintf("Invalid magic: %x\n", magic);
+    return;
+  }
+
   csprng_init();
   prng_init();
 
@@ -36,13 +38,7 @@ void kmain(u32 magic, void *arg) {
   gdt_init();
   idt_init();
 
-  if (MULTIBOOT2_BOOTLOADER_MAGIC != magic) {
-    kprintf("Invalid magic: %x\n", magic);
-    return;
-  }
-
   assert(mmu_init(arg));
   mmu_update_stack(kmain2);
-
-  assert(0);
+  // Don't do anything after this.
 }
