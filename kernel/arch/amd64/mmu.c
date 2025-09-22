@@ -77,13 +77,14 @@ struct PML4T *kernel;
 uint64_t frames[NUM_OF_FRAMES];
 size_t num_pages = 0;
 
-static inline bool set_frame(uintptr_t address, bool state) {
-  address /= 0x1000;
-  size_t index = address / 64;
+static inline bool set_frame(void *address, bool state) {
+  uintptr_t a = (uintptr_t)address;
+  a /= 0x1000;
+  size_t index = a / 64;
   if (index >= NUM_OF_FRAMES) {
     return false;
   }
-  size_t offset = address % 64;
+  size_t offset = a % 64;
   if (state) {
     frames[index] |= (1 << offset);
   } else {
@@ -104,7 +105,7 @@ void *get_frame(bool allocate) {
       }
       uintptr_t rc = ((i * 64 + j) * 0x1000);
       if (allocate) {
-        set_frame(rc, true);
+        set_frame((void *)rc, true);
         assert((frames[i] & (1 << j)));
       }
       return (void *)rc;
@@ -392,7 +393,7 @@ int mmu_init(void *multiboot_header) {
       // FIXME: This is garbage, just memset
       for (uint32_t p = entry->addr; p < entry->addr + entry->len;
            p += 0x1000) {
-        if (!set_frame(p, false)) {
+        if (!set_frame((void *)p, false)) {
           break;
         }
       }
@@ -411,7 +412,7 @@ int mmu_init(void *multiboot_header) {
 
     for (size_t j = 0; j < 512; j++) {
       uintptr_t physical = pdpt->physical[j] & ~(0xFFF);
-      set_frame(physical, true);
+      set_frame((void *)physical, true);
 
       uintptr_t p = pdpt->physical[j] + 0xFFFFFF8000000000;
       if (!(p & PAGE_FLAG_PRESENT)) {
@@ -421,7 +422,7 @@ int mmu_init(void *multiboot_header) {
       pdpt->pdt[j] = pdt;
       for (size_t c = 0; c < 512; c++) {
         uintptr_t physical = pdt->physical[c] & ~(0xFFF);
-        set_frame(physical, true);
+        set_frame((void *)physical, true);
 
         uintptr_t p = pdt->physical[c] + 0xFFFFFF8000000000;
         if (!(p & PAGE_FLAG_PRESENT)) {
@@ -431,12 +432,12 @@ int mmu_init(void *multiboot_header) {
         pdt->pt[c] = pt;
         for (int k = 0; k < 512; k++) {
           uintptr_t physical = pt->page[k] & ~(0xFFF);
-          set_frame(physical, true);
+          set_frame((void *)physical, true);
         }
       }
     }
   }
-  set_frame((uintptr_t)&PML4T, true);
+  set_frame(&PML4T, true);
 
   kernel->pdpt[0] = NULL;
   kernel->physical[0] = (uintptr_t)NULL;
