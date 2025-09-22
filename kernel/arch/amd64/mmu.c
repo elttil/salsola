@@ -423,11 +423,11 @@ void goto_function_with_stack(void *, void *);
 // PDPT index 510 is exlusivley used for the stack which of course
 // is not shared, but instead is copied.
 void mmu_update_stack(void (*function)()) {
-  void *new_stack = (void *)0xffffff8000000000 - 0x1000;
+  void *new_stack = (void *)0xffffff8000000000;
 
   size_t stack_size = 0x8000;
 
-  for (size_t i = 0; i < stack_size; i += PAGE_SIZE) {
+  for (size_t i = 0x1000; i < stack_size; i += PAGE_SIZE) {
     assert(check_virtual_region_is_free((void *)((uintptr_t)new_stack - i),
                                         NULL, true, false, NULL));
   }
