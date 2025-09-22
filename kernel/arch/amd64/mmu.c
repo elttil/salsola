@@ -2,10 +2,13 @@
 #include <kprintf.h>
 #include <mmu.h>
 #include <multiboot2.h>
+#include <prng.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+
+void flush_tlb(void);
 
 #define PAGE_SIZE 0x1000
 
@@ -30,8 +33,8 @@ struct PML4T {
   struct PDPT *pdpt[512];
 };
 
-bool check_virtual_region_is_free(void *address, void **physical,
-                                  bool allocate);
+bool check_virtual_region_is_free(void *address, void **physical, bool allocate,
+                                  bool use_frame, void *frame);
 
 // Depends upon a C version after C99 since it uses `typeof`
 #define align_up(address, alignment)                                           \
@@ -39,7 +42,7 @@ bool check_virtual_region_is_free(void *address, void **physical,
       ? (address)                                                              \
       : (typeof(address))((((uintptr_t)address) -                              \
                            ((uintptr_t)address % alignment)) +                 \
-                          ((uintptr_t)alignment));
+                          ((uintptr_t)alignment))
 
 /*
         align 4096
@@ -74,11 +77,11 @@ struct PML4T *kernel;
 uint64_t frames[NUM_OF_FRAMES];
 size_t num_pages = 0;
 
-static inline void set_frame(uintptr_t address, bool state) {
+static inline bool set_frame(uintptr_t address, bool state) {
   address /= 0x1000;
   size_t index = address / 64;
   if (index >= NUM_OF_FRAMES) {
-    return;
+    return false;
   }
   size_t offset = address % 64;
   if (state) {
@@ -86,6 +89,7 @@ static inline void set_frame(uintptr_t address, bool state) {
   } else {
     frames[index] &= ~(1 << offset);
   }
+  return true;
 }
 
 void *get_frame(bool allocate) {
@@ -101,6 +105,7 @@ void *get_frame(bool allocate) {
       uintptr_t rc = ((i * 64 + j) * 0x1000);
       if (allocate) {
         set_frame(rc, true);
+        assert((frames[i] & (1 << j)));
       }
       return (void *)rc;
     }
@@ -109,9 +114,7 @@ void *get_frame(bool allocate) {
   return NULL;
 }
 
-void allocate_next_pdt(void *address);
-
-bool in_bootstrap_phase = true;
+void allocate_next_pt(void *address);
 
 void *heap_end;
 
@@ -120,7 +123,7 @@ void *mmu_find_free_virtual_region(size_t length) {
     bool is_free = true;
     for (size_t i = 0; i < length; i += PAGE_SIZE) {
       void *address = (void *)((uintptr_t)heap_end + offset + i);
-      if (!check_virtual_region_is_free(address, NULL, false)) {
+      if (!check_virtual_region_is_free(address, NULL, false, false, NULL)) {
         is_free = false;
         break;
       }
@@ -133,20 +136,32 @@ void *mmu_find_free_virtual_region(size_t length) {
   return NULL;
 }
 
-// FIXME: WARNING: The allocation is not guaranteed to be linear in the
-// physical memory mapping.
-void *ksbrk_physical(size_t length, void **physical, bool a) {
-  void *rc = heap_end;
-  if (!in_bootstrap_phase) {
-    heap_end = mmu_find_free_virtual_region(length);
-    rc = heap_end;
+void *mmu_map_frames(void *src, size_t length) {
+  void *virtual = mmu_find_free_virtual_region(length);
+
+  uintptr_t p = (uintptr_t)src;
+  for (size_t i = 0; i < length; i += PAGE_SIZE) {
+    assert(check_virtual_region_is_free((void *)((uintptr_t) virtual + i), NULL,
+                                        true, true, (void *)p));
+    p += PAGE_SIZE;
   }
 
-  if (!a) {
-    allocate_next_pdt(heap_end);
-    heap_end = mmu_find_free_virtual_region(length);
-    rc = heap_end;
+  return virtual;
+}
+
+// FIXME: WARNING: The allocation is not guaranteed to be linear in the
+// physical memory mapping.
+void *ksbrk_physical(size_t length, void **physical) {
+  heap_end = mmu_find_free_virtual_region(length);
+  void *rc = heap_end;
+
+  allocate_next_pt(heap_end);
+  if (0 == length) {
+    return NULL;
   }
+  heap_end = mmu_find_free_virtual_region(length);
+  rc = heap_end;
+
   void *r = NULL;
   for (size_t i = 0; i < length; i += 0x1000) {
     void *physical;
@@ -161,10 +176,9 @@ void *ksbrk_physical(size_t length, void **physical, bool a) {
     // allocations. This does also mean some frames(and address space)
     // get lost forever, but it **should** not be that much. Maybe
     // allocate an extra table in boot.s to avoid this hack?
-    bool was_free = check_virtual_region_is_free(heap_end, &physical, true);
-    if (!in_bootstrap_phase) {
-      assert(was_free);
-    }
+    bool was_free =
+        check_virtual_region_is_free(heap_end, &physical, true, false, NULL);
+    assert(was_free);
 
     if (!r) {
       r = physical;
@@ -174,15 +188,19 @@ void *ksbrk_physical(size_t length, void **physical, bool a) {
   if (physical) {
     *physical = r;
   }
-  in_bootstrap_phase = false;
+
+  prng_get_pseudorandom(rc, align_up(length, PAGE_SIZE));
   return rc;
 }
 
 void *ksbrk(size_t length) {
-  return ksbrk_physical(length, NULL, false);
+  return ksbrk_physical(length, NULL);
 }
 
-void *mmu_virtual_to_physical(void *address) {
+void *mmu_virtual_to_physical(void *address, bool *exists) {
+  if (exists) {
+    *exists = false;
+  }
   const int PT_SHIFT = 12;
   const int PDT_SHIFT = 12 + 9 * 1;
   const int PDPT_SHIFT = 12 + 9 * 2;
@@ -211,7 +229,13 @@ void *mmu_virtual_to_physical(void *address) {
       kernel->pdpt[pml4t_index]->pdt[pdpt_index]->pt[pdt_index]->page[pt_index];
 
   if (!(p & PAGE_FLAG_PRESENT)) {
+    if (exists) {
+      *exists = false;
+    }
     return NULL;
+  }
+  if (exists) {
+    *exists = true;
   }
 
   p &= ~(0xFFF);
@@ -219,7 +243,26 @@ void *mmu_virtual_to_physical(void *address) {
   return (void *)p;
 }
 
-void allocate_next_pdt(void *address) {
+bool allocate_pt(u64 pml4t_index, u64 pdpt_index, u64 pdt_index) {
+  if ((kernel->pdpt[pml4t_index]->pdt[pdpt_index]->physical[pdt_index] &
+       PAGE_FLAG_PRESENT)) {
+    return false;
+  }
+
+  void *physical = get_frame(true);
+  void *address = mmu_find_free_virtual_region(sizeof(struct PT));
+
+  assert(check_virtual_region_is_free(address, NULL, true, true, physical));
+
+  memset(address, 0, sizeof(struct PT));
+
+  kernel->pdpt[pml4t_index]->pdt[pdpt_index]->physical[pdt_index] =
+      (uintptr_t)physical | 0x23;
+  kernel->pdpt[pml4t_index]->pdt[pdpt_index]->pt[pdt_index] = address;
+  return true;
+}
+
+void allocate_next_pt(void *address) {
   //  const int PT_SHIFT = 12;
   const int PDT_SHIFT = 12 + 9 * 1;
   const int PDPT_SHIFT = 12 + 9 * 2;
@@ -230,27 +273,8 @@ void allocate_next_pdt(void *address) {
   uint64_t pdt_index = ((uintptr_t)address >> PDT_SHIFT) & 0x1FF;
   //  uint64_t pt_index = ((uintptr_t)address >> PT_SHIFT) & 0x1FF;
 
-  if (!(kernel->pdpt[pml4t_index]->pdt[pdpt_index]->physical[pdt_index] &
-        PAGE_FLAG_PRESENT)) {
-    void *physical;
-    void *address = ksbrk_physical(sizeof(struct PT), &physical, 1);
-    memset(address, 0, sizeof(struct PT));
-
-    kernel->pdpt[pml4t_index]->pdt[pdpt_index]->physical[pdt_index] =
-        (uintptr_t)physical | 0x3;
-    kernel->pdpt[pml4t_index]->pdt[pdpt_index]->pt[pdt_index] = address;
-  }
-  pdt_index++;
-  if (!(kernel->pdpt[pml4t_index]->pdt[pdpt_index]->physical[pdt_index] &
-        PAGE_FLAG_PRESENT)) {
-    void *physical;
-    void *address = ksbrk_physical(sizeof(struct PT), &physical, 1);
-    memset(address, 0, sizeof(struct PT));
-
-    kernel->pdpt[pml4t_index]->pdt[pdpt_index]->physical[pdt_index] =
-        (uintptr_t)physical | 0x3;
-    kernel->pdpt[pml4t_index]->pdt[pdpt_index]->pt[pdt_index] = address;
-  }
+  allocate_pt(pml4t_index, pdpt_index, pdt_index);
+  allocate_pt(pml4t_index, pdpt_index, pdt_index + 1);
 }
 
 // if allocate == false:
@@ -260,8 +284,8 @@ void allocate_next_pdt(void *address) {
 //   Returns false if region already exists
 //   Returns false if region did not allocate
 //   Return true if the region did not exist and was allocated
-bool check_virtual_region_is_free(void *address, void **physical,
-                                  bool allocate) {
+bool check_virtual_region_is_free(void *address, void **physical, bool allocate,
+                                  bool use_frame, void *frame) {
   const int PT_SHIFT = 12;
   const int PDT_SHIFT = 12 + 9 * 1;
   const int PDPT_SHIFT = 12 + 9 * 2;
@@ -288,17 +312,9 @@ bool check_virtual_region_is_free(void *address, void **physical,
   }
   if (!(kernel->pdpt[pml4t_index]->pdt[pdpt_index]->physical[pdt_index] &
         0x1)) {
-    if (!allocate) {
-      region_exists = false;
-      goto check_return;
-    }
-    void *physical;
-    void *address = ksbrk_physical(sizeof(struct PT), &physical, 0);
-    memset(address, 0, sizeof(struct PT));
-
-    kernel->pdpt[pml4t_index]->pdt[pdpt_index]->physical[pdt_index] =
-        (uintptr_t)physical & 0x3;
-    kernel->pdpt[pml4t_index]->pdt[pdpt_index]->pt[pdt_index] = address;
+    assert(!allocate);
+    region_exists = false;
+    goto check_return;
   }
 
   void **p = (void **)&kernel->pdpt[pml4t_index]
@@ -309,7 +325,10 @@ bool check_virtual_region_is_free(void *address, void **physical,
   if (!(((uintptr_t)*p) & PAGE_FLAG_PRESENT)) {
     // Region does not exist and we allocate it.
     if (allocate) {
-      *p = get_frame(true);
+      if (!use_frame) {
+        frame = get_frame(true);
+      }
+      *p = frame;
       *p = (void *)((uintptr_t)*p | 0x3);
       if (physical) {
         *physical = (void *)((uintptr_t)(*p) & ~(0xFFF));
@@ -332,13 +351,13 @@ check_return:
   //   Returns false if region already exists
   //   Returns false if region did not allocate
   //   Return true if the region did not exist and was allocated
-  if (!allocate) {
-    return !region_exists;
+  if (allocate) {
+    return false;
   } else {
     //    if (region_exists) {
     //      return false;
     //    }
-    return false;
+    return !region_exists;
   }
 }
 
@@ -363,7 +382,9 @@ int mmu_init(void *multiboot_header) {
 
     // FIXME: WARNING: Check if it actually should be m->size/m->entry_size
     // It could cause a lot of bugs if this is incorrect.
-    for (uint32_t i = 0; i < m->size / m->entry_size; i++) {
+    unsigned int entries_count =
+        (m->size - sizeof(struct multiboot_tag_mmap)) / m->entry_size;
+    for (uint32_t i = 0; i < entries_count; i++) {
       multiboot_memory_map_t *entry = &m->entries[i];
       if (MULTIBOOT_MEMORY_AVAILABLE != entry->type) {
         continue;
@@ -371,7 +392,9 @@ int mmu_init(void *multiboot_header) {
       // FIXME: This is garbage, just memset
       for (uint32_t p = entry->addr; p < entry->addr + entry->len;
            p += 0x1000) {
-        set_frame(p, false);
+        if (!set_frame(p, false)) {
+          break;
+        }
       }
       assert(0 == entry->zero);
     }
@@ -413,9 +436,11 @@ int mmu_init(void *multiboot_header) {
       }
     }
   }
+  set_frame((uintptr_t)&PML4T, true);
 
   kernel->pdpt[0] = NULL;
   kernel->physical[0] = (uintptr_t)NULL;
+  flush_tlb();
 
   return 1;
 }

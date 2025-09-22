@@ -106,7 +106,8 @@ _start:
 
     mov edi, PT
 	mov eax, 0x00000003
-    mov ecx, 512
+    ;mov ecx, 512
+    mov ecx, 511
     
 .SetEntry:
     mov DWORD [edi], eax
@@ -148,8 +149,10 @@ stack_top:
 
 extern kmain
 
-extern Realm64
+global flush_tlb
+
 section .text
+
 Realm64:
 	cli
 
@@ -184,3 +187,8 @@ loop:
 ;	cli
 	hlt
 	jmp loop
+
+flush_tlb:
+    mov rax, cr3
+    mov cr3, rax
+	ret
