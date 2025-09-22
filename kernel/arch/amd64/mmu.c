@@ -44,18 +44,6 @@ bool check_virtual_region_is_free(void *address, void **physical, bool allocate,
                            ((uintptr_t)address % alignment)) +                 \
                           ((uintptr_t)alignment))
 
-/*
-        align 4096
-PML4T:
-        resb 4096
-PDPT:
-        resb 4096
-PDT:
-        resb 4096
-PT:
-        resb 4096
-  */
-
 extern struct PML4T PML4T;
 
 // extern void *Realm64;
@@ -70,7 +58,8 @@ uint64_t pow(uint64_t a, uint64_t b) {
   return r;
 }
 
-struct PML4T *kernel;
+struct PML4T *kernel_directory;
+struct PML4T *active_directory;
 
 #define NUM_OF_FRAMES 256
 
@@ -212,22 +201,27 @@ void *mmu_virtual_to_physical(void *address, bool *exists) {
   uint64_t pdt_index = ((uintptr_t)address >> PDT_SHIFT) & 0x1FF;
   uint64_t pt_index = ((uintptr_t)address >> PT_SHIFT) & 0x1FF;
 
-  if (!(kernel->physical[pml4t_index] & PAGE_FLAG_PRESENT)) {
+  if (!(active_directory->physical[pml4t_index] & PAGE_FLAG_PRESENT)) {
     return NULL;
   }
-  if (!(kernel->pdpt[pml4t_index]->physical[pdpt_index] & PAGE_FLAG_PRESENT)) {
-    return NULL;
-  }
-  if (!(kernel->pdpt[pml4t_index]->pdt[pdpt_index]->physical[pdt_index] &
+  if (!(active_directory->pdpt[pml4t_index]->physical[pdpt_index] &
         PAGE_FLAG_PRESENT)) {
     return NULL;
   }
-  if (!(kernel->physical[pml4t_index] & PAGE_FLAG_PRESENT)) {
+  if (!(active_directory->pdpt[pml4t_index]
+            ->pdt[pdpt_index]
+            ->physical[pdt_index] &
+        PAGE_FLAG_PRESENT)) {
+    return NULL;
+  }
+  if (!(active_directory->physical[pml4t_index] & PAGE_FLAG_PRESENT)) {
     return NULL;
   }
 
-  uintptr_t p =
-      kernel->pdpt[pml4t_index]->pdt[pdpt_index]->pt[pdt_index]->page[pt_index];
+  uintptr_t p = active_directory->pdpt[pml4t_index]
+                    ->pdt[pdpt_index]
+                    ->pt[pdt_index]
+                    ->page[pt_index];
 
   if (!(p & PAGE_FLAG_PRESENT)) {
     if (exists) {
@@ -244,8 +238,11 @@ void *mmu_virtual_to_physical(void *address, bool *exists) {
   return (void *)p;
 }
 
-bool allocate_pt(u64 pml4t_index, u64 pdpt_index, u64 pdt_index) {
-  if ((kernel->pdpt[pml4t_index]->pdt[pdpt_index]->physical[pdt_index] &
+bool allocate_pt(bool is_kernel, u64 pml4t_index, u64 pdpt_index,
+                 u64 pdt_index) {
+  if ((active_directory->pdpt[pml4t_index]
+           ->pdt[pdpt_index]
+           ->physical[pdt_index] &
        PAGE_FLAG_PRESENT)) {
     return false;
   }
@@ -257,9 +254,16 @@ bool allocate_pt(u64 pml4t_index, u64 pdpt_index, u64 pdt_index) {
 
   memset(address, 0, sizeof(struct PT));
 
-  kernel->pdpt[pml4t_index]->pdt[pdpt_index]->physical[pdt_index] =
-      (uintptr_t)physical | 0x23;
-  kernel->pdpt[pml4t_index]->pdt[pdpt_index]->pt[pdt_index] = address;
+  active_directory->pdpt[pml4t_index]->pdt[pdpt_index]->physical[pdt_index] =
+      (uintptr_t)physical | 0x3;
+  active_directory->pdpt[pml4t_index]->pdt[pdpt_index]->pt[pdt_index] = address;
+
+  if (is_kernel) {
+    kernel_directory->pdpt[pml4t_index]->pdt[pdpt_index]->physical[pdt_index] =
+        (uintptr_t)physical | 0x3;
+    kernel_directory->pdpt[pml4t_index]->pdt[pdpt_index]->pt[pdt_index] =
+        address;
+  }
   return true;
 }
 
@@ -274,8 +278,8 @@ void allocate_next_pt(void *address) {
   uint64_t pdt_index = ((uintptr_t)address >> PDT_SHIFT) & 0x1FF;
   //  uint64_t pt_index = ((uintptr_t)address >> PT_SHIFT) & 0x1FF;
 
-  allocate_pt(pml4t_index, pdpt_index, pdt_index);
-  allocate_pt(pml4t_index, pdpt_index, pdt_index + 1);
+  allocate_pt(true, pml4t_index, pdpt_index, pdt_index);
+  allocate_pt(true, pml4t_index, pdpt_index, pdt_index + 1);
 }
 
 // if allocate == false:
@@ -299,26 +303,28 @@ bool check_virtual_region_is_free(void *address, void **physical, bool allocate,
 
   bool region_exists = true;
 
-  if (!(kernel->physical[pml4t_index] & 0x1)) {
+  if (!(active_directory->physical[pml4t_index] & 0x1)) {
     kprintf("ERROR 1\n");
     assert(!allocate);
     region_exists = false;
     goto check_return;
   }
-  if (!(kernel->pdpt[pml4t_index]->physical[pdpt_index] & 0x1)) {
+  if (!(active_directory->pdpt[pml4t_index]->physical[pdpt_index] & 0x1)) {
     kprintf("ERROR 2\n");
     assert(!allocate);
     region_exists = false;
     goto check_return;
   }
-  if (!(kernel->pdpt[pml4t_index]->pdt[pdpt_index]->physical[pdt_index] &
+  if (!(active_directory->pdpt[pml4t_index]
+            ->pdt[pdpt_index]
+            ->physical[pdt_index] &
         0x1)) {
     assert(!allocate);
     region_exists = false;
     goto check_return;
   }
 
-  void **p = (void **)&kernel->pdpt[pml4t_index]
+  void **p = (void **)&active_directory->pdpt[pml4t_index]
                  ->pdt[pdpt_index]
                  ->pt[pdt_index]
                  ->page[pt_index];
@@ -363,7 +369,7 @@ check_return:
 }
 
 int mmu_init(void *multiboot_header) {
-  kernel = (struct PML4T *)(((uintptr_t)&PML4T) + 0xffffff8000000000);
+  kernel_directory = (struct PML4T *)(((uintptr_t)&PML4T) + 0xffffff8000000000);
 
   heap_end = align_up(&_kernel_end, 0x1000);
   heap_end = (void *)((uintptr_t)heap_end + 0x1000);
@@ -402,13 +408,13 @@ int mmu_init(void *multiboot_header) {
   }
 
   for (size_t i = 0; i < 512; i++) {
-    uintptr_t p = kernel->physical[i] + 0xFFFFFF8000000000;
+    uintptr_t p = kernel_directory->physical[i] + 0xFFFFFF8000000000;
     if (!(p & PAGE_FLAG_PRESENT)) {
       continue;
     }
 
     struct PDPT *pdpt = (struct PDPT *)(p & ~(0xFFF));
-    kernel->pdpt[i] = pdpt;
+    kernel_directory->pdpt[i] = pdpt;
 
     for (size_t j = 0; j < 512; j++) {
       uintptr_t physical = pdpt->physical[j] & ~(0xFFF);
@@ -439,9 +445,11 @@ int mmu_init(void *multiboot_header) {
   }
   set_frame(&PML4T, true);
 
-  kernel->pdpt[0] = NULL;
-  kernel->physical[0] = (uintptr_t)NULL;
+  kernel_directory->pdpt[0] = NULL;
+  kernel_directory->physical[0] = (uintptr_t)NULL;
   flush_tlb();
+
+  active_directory = kernel_directory;
 
   return 1;
 }
