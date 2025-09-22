@@ -1,6 +1,6 @@
 // TODO: Clean this up. Right now I just want it to work.
-#include <stdint.h>
 #include <arch/amd64/gdt.h>
+#include <stdint.h>
 
 struct GDTR {
   uint16_t limit;

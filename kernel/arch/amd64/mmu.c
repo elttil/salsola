@@ -38,11 +38,11 @@ bool check_virtual_region_is_free(void *address, void **physical, bool allocate,
 
 // Depends upon a C version after C99 since it uses `typeof`
 #define align_up(address, alignment)                                           \
-  (0 == ((uintptr_t)address) % ((uintptr_t)alignment))                         \
-      ? (address)                                                              \
-      : (typeof(address))((((uintptr_t)address) -                              \
-                           ((uintptr_t)address % alignment)) +                 \
-                          ((uintptr_t)alignment))
+  ((0 == ((uintptr_t)address) % ((uintptr_t)alignment))                        \
+       ? (address)                                                             \
+       : (typeof(address))((((uintptr_t)address) -                             \
+                            ((uintptr_t)address % alignment)) +                \
+                           ((uintptr_t)alignment)))
 
 extern struct PML4T PML4T;
 
@@ -58,7 +58,6 @@ uint64_t pow(uint64_t a, uint64_t b) {
   return r;
 }
 
-struct PML4T *kernel_directory;
 struct PML4T *active_directory;
 
 #define NUM_OF_FRAMES 256
@@ -82,22 +81,37 @@ static inline bool set_frame(void *address, bool state) {
   return true;
 }
 
-void *get_frame(bool allocate) {
+void *get_frame(bool allocate, u64 count) {
+  assert(0 != count);
+  u64 left = count;
+  void *rc = NULL;
   for (size_t i = 0; i < NUM_OF_FRAMES; i++) {
     if (~((uint64_t)0) == frames[i]) {
+      left = count;
       continue;
     }
 
     for (size_t j = 0; j < 64; j++) {
       if (frames[i] & (1 << j)) {
+        left = count;
         continue;
       }
-      uintptr_t rc = ((i * 64 + j) * 0x1000);
-      if (allocate) {
-        set_frame((void *)rc, true);
-        assert((frames[i] & (1 << j)));
+      if (left == count) {
+        rc = (void *)((i * 64 + j) * 0x1000);
       }
-      return (void *)rc;
+      left--;
+      kprintf("left: %x\n", left);
+
+      if (0 == left) {
+        if (allocate) {
+          uintptr_t ptr = (uintptr_t)rc;
+          for (u64 i = 0; i < count; i++) {
+            set_frame((void *)ptr, true);
+            ptr += PAGE_SIZE;
+          }
+        }
+        return (void *)rc;
+      }
     }
   }
   assert(0);
@@ -238,8 +252,43 @@ void *mmu_virtual_to_physical(void *address, bool *exists) {
   return (void *)p;
 }
 
-bool allocate_pt(bool is_kernel, u64 pml4t_index, u64 pdpt_index,
-                 u64 pdt_index) {
+void *safe_allocation(size_t length, void **physical) {
+  void *p = get_frame(true, (align_up(length, PAGE_SIZE)) / PAGE_SIZE);
+  void *a = mmu_find_free_virtual_region(length);
+
+  if (physical) {
+    *physical = p;
+  }
+
+  uintptr_t ptr = (uintptr_t)a;
+  uintptr_t phys_ptr = (uintptr_t)p;
+  for (size_t i = 0; i < length / PAGE_SIZE; i++) {
+    assert(check_virtual_region_is_free((void *)ptr, NULL, true, true,
+                                        (void *)phys_ptr));
+    phys_ptr += PAGE_SIZE;
+    ptr += PAGE_SIZE;
+  }
+  memset(a, 0, align_up(length, PAGE_SIZE));
+  return a;
+}
+
+bool allocate_pt(u64 pml4t_index, u64 pdpt_index, u64 pdt_index) {
+  if (!(active_directory->physical[pml4t_index] & PAGE_FLAG_PRESENT)) {
+    void *physical;
+    struct PDPT *pdpt = safe_allocation(sizeof(struct PDPT), &physical);
+    active_directory->physical[pml4t_index] = (uintptr_t)physical | 0x3;
+    active_directory->pdpt[pml4t_index] = pdpt;
+  }
+
+  if (!(active_directory->pdpt[pml4t_index]->physical[pdpt_index] &
+        PAGE_FLAG_PRESENT)) {
+    void *physical;
+    struct PDT *pdt = safe_allocation(sizeof(struct PDT), &physical);
+    active_directory->pdpt[pml4t_index]->physical[pdpt_index] =
+        (uintptr_t)physical | 0x3;
+    active_directory->pdpt[pml4t_index]->pdt[pdpt_index] = pdt;
+  }
+
   if ((active_directory->pdpt[pml4t_index]
            ->pdt[pdpt_index]
            ->physical[pdt_index] &
@@ -247,23 +296,13 @@ bool allocate_pt(bool is_kernel, u64 pml4t_index, u64 pdpt_index,
     return false;
   }
 
-  void *physical = get_frame(true);
-  void *address = mmu_find_free_virtual_region(sizeof(struct PT));
-
-  assert(check_virtual_region_is_free(address, NULL, true, true, physical));
-
-  memset(address, 0, sizeof(struct PT));
+  void *physical;
+  void *address = safe_allocation(sizeof(struct PT), &physical);
 
   active_directory->pdpt[pml4t_index]->pdt[pdpt_index]->physical[pdt_index] =
       (uintptr_t)physical | 0x3;
   active_directory->pdpt[pml4t_index]->pdt[pdpt_index]->pt[pdt_index] = address;
 
-  if (is_kernel) {
-    kernel_directory->pdpt[pml4t_index]->pdt[pdpt_index]->physical[pdt_index] =
-        (uintptr_t)physical | 0x3;
-    kernel_directory->pdpt[pml4t_index]->pdt[pdpt_index]->pt[pdt_index] =
-        address;
-  }
   return true;
 }
 
@@ -278,8 +317,8 @@ void allocate_next_pt(void *address) {
   uint64_t pdt_index = ((uintptr_t)address >> PDT_SHIFT) & 0x1FF;
   //  uint64_t pt_index = ((uintptr_t)address >> PT_SHIFT) & 0x1FF;
 
-  allocate_pt(true, pml4t_index, pdpt_index, pdt_index);
-  allocate_pt(true, pml4t_index, pdpt_index, pdt_index + 1);
+  allocate_pt(pml4t_index, pdpt_index, pdt_index);
+  allocate_pt(pml4t_index, pdpt_index, pdt_index + 1);
 }
 
 // if allocate == false:
@@ -303,6 +342,8 @@ bool check_virtual_region_is_free(void *address, void **physical, bool allocate,
 
   bool region_exists = true;
 
+  allocate_pt(pml4t_index, pdpt_index, pdt_index);
+  /*
   if (!(active_directory->physical[pml4t_index] & 0x1)) {
     kprintf("ERROR 1\n");
     assert(!allocate);
@@ -323,6 +364,7 @@ bool check_virtual_region_is_free(void *address, void **physical, bool allocate,
     region_exists = false;
     goto check_return;
   }
+  */
 
   void **p = (void **)&active_directory->pdpt[pml4t_index]
                  ->pdt[pdpt_index]
@@ -333,7 +375,7 @@ bool check_virtual_region_is_free(void *address, void **physical, bool allocate,
     // Region does not exist and we allocate it.
     if (allocate) {
       if (!use_frame) {
-        frame = get_frame(true);
+        frame = get_frame(true, 1);
       }
       *p = frame;
       *p = (void *)((uintptr_t)*p | 0x3);
@@ -368,8 +410,35 @@ check_return:
   }
 }
 
+void *get_current_sp(void);
+void *get_current_sbp(void);
+
+void set_sp(void *);
+void set_sbp(void *);
+
+void kmain2();
+void goto_function_with_stack(void *, void *);
+
+// Moves the stack to its own PDPT.
+// NOTE: Index starts counting from 0
+// PDPT index 511 is reserved for the shared kernel address space.
+// PDPT index 510 is exlusivley used for the stack which of course
+// is not shared, but instead is copied.
+void update_stack() {
+  void *new_stack = (void *)0xffffff8000000000 - 0x1000;
+
+  size_t stack_size = 0x8000;
+
+  for (size_t i = 0; i < stack_size; i += PAGE_SIZE) {
+    assert(check_virtual_region_is_free((void *)((uintptr_t)new_stack - i),
+                                        NULL, true, false, NULL));
+  }
+
+  goto_function_with_stack(kmain2, new_stack);
+}
+
 int mmu_init(void *multiboot_header) {
-  kernel_directory = (struct PML4T *)(((uintptr_t)&PML4T) + 0xffffff8000000000);
+  active_directory = (struct PML4T *)(((uintptr_t)&PML4T) + 0xffffff8000000000);
 
   heap_end = align_up(&_kernel_end, 0x1000);
   heap_end = (void *)((uintptr_t)heap_end + 0x1000);
@@ -408,13 +477,13 @@ int mmu_init(void *multiboot_header) {
   }
 
   for (size_t i = 0; i < 512; i++) {
-    uintptr_t p = kernel_directory->physical[i] + 0xFFFFFF8000000000;
+    uintptr_t p = active_directory->physical[i] + 0xFFFFFF8000000000;
     if (!(p & PAGE_FLAG_PRESENT)) {
       continue;
     }
 
     struct PDPT *pdpt = (struct PDPT *)(p & ~(0xFFF));
-    kernel_directory->pdpt[i] = pdpt;
+    active_directory->pdpt[i] = pdpt;
 
     for (size_t j = 0; j < 512; j++) {
       uintptr_t physical = pdpt->physical[j] & ~(0xFFF);
@@ -445,11 +514,14 @@ int mmu_init(void *multiboot_header) {
   }
   set_frame(&PML4T, true);
 
-  kernel_directory->pdpt[0] = NULL;
-  kernel_directory->physical[0] = (uintptr_t)NULL;
-  flush_tlb();
+  active_directory->pdpt[0] = NULL;
+  active_directory->physical[0] = (uintptr_t)NULL;
 
-  active_directory = kernel_directory;
+  ksbrk(0x0);
+
+  update_stack();
+
+  flush_tlb();
 
   return 1;
 }

@@ -99,7 +99,7 @@ struct interrupt_descriptor {
   u32 reserved;
 } __attribute__((packed));
 
-struct interrupt_descriptor idt[256];
+struct interrupt_descriptor idt[256] __attribute__((aligned(0x1000)));
 
 void set_idt_entry(u8 vector, void *handler, u8 dpl) {
   u64 handler_addr = (uint64_t)handler;
@@ -116,18 +116,13 @@ void set_idt_entry(u8 vector, void *handler, u8 dpl) {
   entry->ist = 0;
 }
 
-void asm_load_idt(u64 address);
+struct idtr idt_reg;
+
+void asm_load_idt(void *address);
 void load_idt(void *idt_addr) {
-  struct idtr idt_reg;
   idt_reg.limit = 0xFFF;
   idt_reg.base = (u64)idt_addr;
-  asm_load_idt((u64)&idt_reg);
-}
-
-void page_fault() {
-  kprintf("Page fault\n");
-  for (;;)
-    ;
+  asm_load_idt(&idt_reg);
 }
 
 void double_fault() {
@@ -207,6 +202,13 @@ void interrupt_dispatch(struct cpu_status *r) {
   */
 }
 
+void page_fault(struct cpu_status *r) {
+  (void)r;
+  kprintf("Page fault\n");
+  for (;;)
+    ;
+}
+
 void handler_install(uint8_t num, interrupt_handler handler) {
   if (num >= 0x20) {
     irq_clear_mask(num - 0x20);
@@ -223,10 +225,12 @@ void idt_init(void) {
     irq_set_mask(i);
   }
 
-  //  set_idt_entry(0x0e, (void *)page_fault, 0);
-  //  set_idt_entry(0x0d, (void *)page_fault, 0);
-  //  set_idt_entry(0x08, (void *)interrupt_stub, 0);
+  handler_install(0x0E, page_fault);
 
+  kprintf("idt: %x\n", idt);
+  kprintf("&idt[0x21]: %x\n", &idt[0x21]);
+  kprintf("idt: %x\n", mmu_virtual_to_physical(idt, NULL));
+  kprintf("sizeof idt: %x\n", sizeof idt);
   load_idt(idt);
   interrupts_enable();
 }

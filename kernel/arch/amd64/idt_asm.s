@@ -1,6 +1,41 @@
 global asm_load_idt
 global interrupts_enable
 global interrupts_disable
+global load_gdt
+
+global get_current_sp
+global get_current_sbp
+global set_sp
+global set_sbp
+global goto_function_with_stack
+
+goto_function_with_stack:
+	mov rsp, rsi
+	mov rbp, rsi
+	call rdi
+loop:
+	jmp loop
+	ret
+
+get_current_sp:
+	mov rax, rsp
+	ret
+
+get_current_sbp:
+	mov rax, rbp
+	ret
+
+set_sp:
+	mov rsp, rdi
+	ret
+
+set_sbp:
+	mov rbp, rdi
+	ret
+
+load_gdt:
+	lgdt [rdi]
+	ret
 
 asm_load_idt:
 	lidt [rdi]
