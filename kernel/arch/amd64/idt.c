@@ -227,10 +227,6 @@ void idt_init(void) {
 
   handler_install(0x0E, page_fault);
 
-  kprintf("idt: %x\n", idt);
-  kprintf("&idt[0x21]: %x\n", &idt[0x21]);
-  kprintf("idt: %x\n", mmu_virtual_to_physical(idt, NULL));
-  kprintf("sizeof idt: %x\n", sizeof idt);
   load_idt(idt);
   interrupts_enable();
 }

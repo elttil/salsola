@@ -100,7 +100,6 @@ void *get_frame(bool allocate, u64 count) {
         rc = (void *)((i * 64 + j) * 0x1000);
       }
       left--;
-      kprintf("left: %x\n", left);
 
       if (0 == left) {
         if (allocate) {
@@ -416,7 +415,6 @@ void *get_current_sbp(void);
 void set_sp(void *);
 void set_sbp(void *);
 
-void kmain2();
 void goto_function_with_stack(void *, void *);
 
 // Moves the stack to its own PDPT.
@@ -424,7 +422,7 @@ void goto_function_with_stack(void *, void *);
 // PDPT index 511 is reserved for the shared kernel address space.
 // PDPT index 510 is exlusivley used for the stack which of course
 // is not shared, but instead is copied.
-void update_stack() {
+void mmu_update_stack(void (*function)()) {
   void *new_stack = (void *)0xffffff8000000000 - 0x1000;
 
   size_t stack_size = 0x8000;
@@ -434,7 +432,7 @@ void update_stack() {
                                         NULL, true, false, NULL));
   }
 
-  goto_function_with_stack(kmain2, new_stack);
+  goto_function_with_stack(function, new_stack);
 }
 
 int mmu_init(void *multiboot_header) {
@@ -518,8 +516,6 @@ int mmu_init(void *multiboot_header) {
   active_directory->physical[0] = (uintptr_t)NULL;
 
   ksbrk(0x0);
-
-  update_stack();
 
   flush_tlb();
 

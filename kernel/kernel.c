@@ -15,6 +15,18 @@
 
 #include "multiboot2.h"
 
+void kmain2(void) {
+  assert(kmalloc_init());
+
+  assert(ps2_keyboard_init());
+
+  ahci_init();
+  kprintf("Hello, world!\n");
+  for (;;)
+    ;
+  return;
+}
+
 void kmain(u32 magic, void *arg) {
   csprng_init();
   prng_init();
@@ -30,16 +42,7 @@ void kmain(u32 magic, void *arg) {
   }
 
   assert(mmu_init(arg));
-}
+  mmu_update_stack(kmain2);
 
-void kmain2(void) {
-  assert(kmalloc_init());
-
-  assert(ps2_keyboard_init());
-
-  ahci_init();
-  kprintf("Hello, world!\n");
-  for (;;)
-    ;
-  return;
+  assert(0);
 }
