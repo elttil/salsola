@@ -1,3 +1,5 @@
+#ifndef MMU_H
+#define MMU_H
 #include <stddef.h>
 
 struct PML4T;
@@ -16,3 +18,5 @@ void mmu_update_stack(void (*function)());
 struct mmu_directory *mmu_clone_directory(struct mmu_directory *directory);
 struct mmu_directory *mmu_get_active_directory(void);
 void mmu_set_directory(struct mmu_directory *directory);
+void mmu_unmap_frames(void *src, size_t length);
+#endif // MMU_H
