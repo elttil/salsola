@@ -7,6 +7,7 @@
 
 struct task *task_head = NULL;
 struct task *task_current = NULL;
+u64 active_pid = 0;
 
 bool task_init(void) {
   task_head = kmalloc(sizeof(struct task));
@@ -14,6 +15,8 @@ bool task_init(void) {
     return false;
   }
   task_head->next = NULL;
+  task_head->pid = active_pid;
+  active_pid++;
 
   task_head->directory = mmu_get_active_directory();
 
@@ -27,14 +30,19 @@ void task_create_directory(struct task *task, struct task *parent) {
   task->tcb.cr3 = (u64)task->directory->physical;
 }
 
-bool task_create(void) {
+u64 task_fork(bool *err) {
+  PTR_ASSIGN(err, false);
+
   struct task *parent = task_current;
   assert(parent);
 
   struct task *task = kmalloc(sizeof(struct task));
   if (!task) {
+    PTR_ASSIGN(err, true);
     return false;
   }
+  task->pid = active_pid;
+  active_pid++;
 
   task->next = task_head;
   task_head = task;
@@ -59,8 +67,4 @@ struct task *task_next(struct task *task) {
 void task_legacy_switch(void) {
   struct task *new_task = task_next(task_current);
   task_switch(new_task);
-}
-
-bool task_fork(void) {
-  return task_create();
 }
