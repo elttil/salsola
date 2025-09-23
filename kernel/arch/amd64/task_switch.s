@@ -22,26 +22,20 @@ weird_switch2:
 	mov r8, cr3
 	mov cr3, rax
 
-	pop rax
-	mov rax, weird_return
-	push rax
+		mov rax, weird_return
+		mov [rsp], rax
 
-	push rbx
-	push r12
-	push r13
-	push r14
-	push r15
+		push rbx
+		push r12
+		push r13
+		push r14
+		push r15
 
-	mov [rdi], rsp
+		mov [rdi], rsp
+
+		add rsp, 8*5
 
 	mov cr3, r8
-
-	pop rax
-	pop rax
-	pop rax
-	pop rax
-	pop rax
-
 	ret
 
 ; preserve: rbx, rsp, rbp, r12, r13, r14, and r15
