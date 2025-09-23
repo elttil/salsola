@@ -6,16 +6,17 @@ extern task_create_directory
 
 weird_switch:
 	call weird_switch2
-	mov rax, 0x0
+	mov rax, [rdi+24]
+;	mov rax, 0x1
 	ret
 weird_return:
-	mov rax, 0x1
+	mov rax, 0x0
 	ret
 
 weird_switch2:
-	mov rbx, rdi
+	push rdi
 	call task_create_directory
-	mov rdi, rbx
+	pop rdi
 
 	mov rax, [rdi+8]; cr3
 
