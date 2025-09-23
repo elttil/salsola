@@ -7,6 +7,7 @@ global get_current_sp
 global get_current_sbp
 global set_sp
 global set_sbp
+global set_cr3
 global goto_function_with_stack
 
 goto_function_with_stack:
@@ -21,6 +22,10 @@ goto_function_with_stack:
 	pop r9
 	mov rbp, r10
 	mov rsp, r9
+	ret
+
+set_cr3:
+	mov cr3, rdi
 	ret
 
 get_current_sp:
