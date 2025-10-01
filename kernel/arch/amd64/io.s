@@ -48,3 +48,9 @@ inb:
 	mov eax, 0
 	in al, dx
 	ret
+
+global set_stack_and_jump
+set_stack_and_jump:
+	mov rsp, rdi
+	mov rbp, rdi
+	jmp rsi

@@ -1,5 +1,6 @@
 // TODO: Clean this up. Right now I just want it to work.
 #include <arch/amd64/gdt.h>
+#include <kprintf.h>
 #include <stdint.h>
 
 struct GDTR {
@@ -9,6 +10,10 @@ struct GDTR {
 
 uint64_t num_gdt_entries = 3;
 uint64_t gdt_entries[3];
+
+extern void *trampoline_gdt;
+
+struct GDTR gdtr;
 
 void load_gdt(void *gdtr);
 void gdt_init(void) {
@@ -31,8 +36,11 @@ void gdt_init(void) {
   kernel_data |= 1 << 21;
   gdt_entries[2] = kernel_data << 32;
 
-  struct GDTR example_gdtr = {.limit = num_gdt_entries * sizeof(uint64_t) - 1,
-                              .address = (uint64_t)gdt_entries};
+  gdtr.limit = num_gdt_entries * sizeof(uint64_t) - 1;
+  gdtr.address = (uint64_t)gdt_entries;
 
-  load_gdt(&example_gdtr);
+  trampoline_gdt = &gdtr;
+  trampoline_gdt = (void *)((uintptr_t)trampoline_gdt - 0xFFFFFF8000000000);
+  kprintf("gdtr: %x\n", trampoline_gdt);
+  load_gdt(&gdtr);
 }

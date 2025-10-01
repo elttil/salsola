@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <drivers/serial.h>
 #include <kprintf.h>
+#include <lock.h>
 #include <math.h>
 #include <stdarg.h>
 #include <stddef.h>
@@ -380,8 +381,12 @@ void context_serial_write(struct print_context *ctx, const char *s, int l) {
 struct print_context serial_context = {.data = NULL,
                                        .write = context_serial_write};
 
+lock_t serial_kprintf_lock;
 int vkprintf(const char *format, va_list ap) {
-  return vkcprintf(&serial_context, format, ap);
+  lock_acquire(&serial_kprintf_lock);
+  int rc = vkcprintf(&serial_context, format, ap);
+  lock_release(&serial_kprintf_lock);
+  return rc;
 }
 
 int kprintf(const char *format, ...) {

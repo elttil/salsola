@@ -184,22 +184,6 @@ void interrupt_dispatch(struct cpu_status *r) {
   }
 
   handler(r);
-
-  /*
-  int is_kernel = (r->iret_cs == 0x08);
-  if (!is_kernel) {
-    const signal_t *sig = process_pop_signal(NULL);
-    if (sig) {
-      process_push_restore_context(NULL, *r);
-      r->iret_rip = sig->handler_ip;
-
-      // Add magic value to the stack such that the signal handler
-      // returns to 0xDEADC0DE
-      r->useresp -= 4;
-      *(u32 *)r->useresp = 0xDEADC0DE;
-    }
-  }
-  */
 }
 
 void page_fault(struct cpu_status *r) {
@@ -225,7 +209,7 @@ void idt_init(void) {
     irq_set_mask(i);
   }
 
-  handler_install(0x0E, page_fault);
+  //  handler_install(0x0E, page_fault);
 
   load_idt(idt);
   interrupts_enable();

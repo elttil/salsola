@@ -149,13 +149,13 @@ void keyboard_handler(struct cpu_status *r) {
   ev.mode |= is_shift_down << 0;
   ev.mode |= is_alt_down << 1;
   ev.mode |= is_ctrl_down << 2;
-  ringbuffer_write(&keyboard_buffer, (u8 *)&ev, sizeof(ev));
+  //  ringbuffer_write(&keyboard_buffer, (u8 *)&ev, sizeof(ev));
 }
 
 bool ps2_keyboard_init(void) {
-  if (!ringbuffer_init(&keyboard_buffer, sizeof(struct key_event) * 128)) {
-    return false;
-  }
+  //  if (!ringbuffer_init(&keyboard_buffer, sizeof(struct key_event) * 128)) {
+  //    return false;
+  //  }
   handler_install(0x21, keyboard_handler);
   return true;
 }

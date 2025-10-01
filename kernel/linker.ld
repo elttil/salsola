@@ -3,9 +3,20 @@ OUTPUT_FORMAT("elf64-x86-64")
 
 SECTIONS
 {
-    . = 0x00100000;
-
 	_kernel_start = .;
+
+    . = 0x00008000;
+    .trampoline.text : {
+        *(.trampoline.text)
+     }
+    .trampoline.bss : {
+        *(.trampoline.bss)
+     }
+    .trampoline.data : {
+        *(.trampoline.data)
+     }
+
+    . = 0x00100000;
 
     .multiboot.data : {
          *(.multiboot.data)

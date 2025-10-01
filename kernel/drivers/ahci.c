@@ -1,9 +1,11 @@
 #include <assert.h>
 #include <drivers/pci.h>
+#include <kmalloc.h>
 #include <kprintf.h>
 #include <log.h>
 #include <math.h>
 #include <mmu.h>
+#include <string.h>
 
 #define ATA_DEV_BUSY 0x80
 #define ATA_DEV_DRQ 0x08
@@ -17,6 +19,37 @@
 volatile struct HBA_MEM *hba;
 
 const u16 num_prdt = 8;
+
+struct mapping {
+  void *src;
+  void *dst;
+  size_t length;
+};
+
+struct mapping list[20];
+size_t list_index = 0;
+
+bool create_physical_to_virtual_mapping(void *src, void *dst, size_t length) {
+  assert(list_index < 20 - 1);
+  list[list_index].src = src;
+  list[list_index].dst = dst;
+  list[list_index].length = length;
+  list_index++;
+  return true;
+}
+
+void *physical_to_virtual(void *src) {
+  // TODO: Include length
+  uintptr_t p = (uintptr_t)src;
+  for (size_t i = 0; i < list_index; i++) {
+    uintptr_t s = (uintptr_t)list[i].src;
+    uintptr_t d = (uintptr_t)list[i].dst;
+    if ((p & (~0xFFF)) == (s & ~(0xFFF))) {
+      return (void *)((d & (~0xFFF)) | (p & 0xFFF));
+    }
+  }
+  return NULL;
+}
 
 typedef enum {
   FIS_TYPE_REG_H2D = 0x27,   // Register FIS - host to device
@@ -227,12 +260,13 @@ void ahci_stop_command_execution(volatile struct HBA_PORT *port) {
 // fb_address: size has to be 256 and byte aligned to 256
 // command_table_array: size has to be 256*32
 // They are both physical addresses
-void ahci_set_base(volatile struct HBA_PORT *port, u32 virt_clb_address,
-                   u32 virt_fb_address, u32 virt_command_table_array) {
-  u32 clb_address = (u32)virtual_to_physical((void *)virt_clb_address, NULL);
-  u32 fb_address = (u32)virtual_to_physical((void *)virt_fb_address, NULL);
+void ahci_set_base(volatile struct HBA_PORT *port, void *virt_clb_address,
+                   void *virt_fb_address, void *virt_command_table_array) {
+  u32 clb_address =
+      (u32)mmu_virtual_to_physical((void *)virt_clb_address, NULL);
+  u32 fb_address = (u32)mmu_virtual_to_physical((void *)virt_fb_address, NULL);
   u32 command_table_array =
-      (u32)virtual_to_physical((void *)virt_command_table_array, NULL);
+      (u32)mmu_virtual_to_physical((void *)virt_command_table_array, NULL);
 
   ahci_stop_command_execution(port);
 
@@ -266,16 +300,17 @@ void ahci_sata_setup(volatile struct HBA_PORT *port) {
   // clb_address: size has to be 1024 and byte aligned to 1024
   // fb_address: size has to be 256 and byte aligned to 256
   // command_table_array: size has to be 256*32
-  u32 clb_address = (u32)kmalloc_align(1024, 0);
-  u32 fb_address = (u32)kmalloc_align(256, 0);
-  u32 command_table_array = (u32)kmalloc_align(256 * 32, 0);
+  void *clb_address = kmalloc_align(1024, 0);
+  void *fb_address = kmalloc_align(256, 0);
+  void *command_table_array = kmalloc_align(256 * 32, 0);
   create_physical_to_virtual_mapping(
-      virtual_to_physical((void *)clb_address, NULL), (void *)clb_address,
+      mmu_virtual_to_physical((void *)clb_address, NULL), (void *)clb_address,
       1024);
   create_physical_to_virtual_mapping(
-      virtual_to_physical((void *)fb_address, NULL), (void *)fb_address, 256);
+      mmu_virtual_to_physical((void *)fb_address, NULL), (void *)fb_address,
+      256);
   create_physical_to_virtual_mapping(
-      virtual_to_physical((void *)command_table_array, NULL),
+      mmu_virtual_to_physical((void *)command_table_array, NULL),
       (void *)command_table_array, 256 * 32);
 
   // TODO: Should it be the responsiblity of the caller to make sure these are
@@ -316,7 +351,7 @@ u8 ahci_perform_command(volatile struct HBA_PORT *port, u32 startl, u32 starth,
     command_slot = get_free_command_slot(port, &err);
   } while (err);
   struct HBA_CMD_HEADER *cmdheader =
-      (struct HBA_CMD_HEADER *)mmu_physical_to_virtual((void *)port->clb);
+      (struct HBA_CMD_HEADER *)physical_to_virtual((void *)port->clb);
   assert(0x20 == sizeof(struct HBA_CMD_HEADER));
   cmdheader += command_slot;
   cmdheader->w = is_write;
@@ -334,7 +369,7 @@ u8 ahci_perform_command(volatile struct HBA_PORT *port, u32 startl, u32 starth,
   // 8K bytes (16 sectors) per PRDT
   u16 i = 0;
   for (; i < cmdheader->prdtl - 1; i++) {
-    cmdtbl->prdt_entry[i].dba = (u32)virtual_to_physical(buffer, NULL);
+    cmdtbl->prdt_entry[i].dba = (u32)mmu_virtual_to_physical(buffer, NULL);
     cmdtbl->prdt_entry[i].dbc =
         8 * 1024 - 1; // 8K bytes (this value should always be set to 1 less
                       // than the actual value)
@@ -344,7 +379,7 @@ u8 ahci_perform_command(volatile struct HBA_PORT *port, u32 startl, u32 starth,
   }
   // FIXME: Edge case if the count does not fit. This should not be here it is
   // ugly. Find a more general case.
-  cmdtbl->prdt_entry[i].dba = (u32)virtual_to_physical(buffer, NULL);
+  cmdtbl->prdt_entry[i].dba = (u32)mmu_virtual_to_physical(buffer, NULL);
   cmdtbl->prdt_entry[i].dbc = count * 512 - 1;
   cmdtbl->prdt_entry[i].i = 1;
 
@@ -517,7 +552,7 @@ bool ahci_init(void) {
     switch (type) {
     case AHCI_DEV_SATA:
       ahci_sata_setup(&hba->ports[i]);
-      add_devfs_drive_file(i);
+      //      add_devfs_drive_file(i);
       kprintf("SATA drive found at port %d\n", i);
       break;
     case AHCI_DEV_SATAPI:

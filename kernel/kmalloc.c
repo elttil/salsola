@@ -1,12 +1,15 @@
 #include <assert.h>
 #include <kmalloc.h>
 #include <kprintf.h>
+#include <lock.h>
 #include <math.h>
 #include <mmu.h>
 #include <prng.h>
 #include <stdint.h>
 #include <string.h>
-#define NEW_ALLOC_SIZE 0x40000
+#define NEW_ALLOC_SIZE 0x8000
+
+lock_t heap_lock;
 
 // #define KMALLOC_DEBUG
 
@@ -27,6 +30,22 @@ u64 delta_page(u64 a) {
 MallocHeader *head = NULL;
 MallocHeader *final = NULL;
 u32 total_heap_size = 0;
+
+void *kmalloc_align(size_t s, void **physical) {
+  // TODO: It should reuse virtual regions so that it does not run out
+  // of address space.
+  void *rc;
+  if (!(rc = ksbrk_physical(s, physical))) {
+    return NULL;
+  }
+  return rc;
+}
+
+void kmalloc_align_free(void *p, size_t s) {
+  // TODO
+  (void)p;
+  (void)s;
+}
 
 int kmalloc_init(void) {
   head = (MallocHeader *)ksbrk(NEW_ALLOC_SIZE);
@@ -172,13 +191,16 @@ void kfree(void *p) {
 }
 #else
 void *int_kmalloc(size_t s) {
+  lock_acquire(&heap_lock);
   size_t n = s;
   MallocHeader *free_entry = find_free_entry(s);
   if (!free_entry) {
     if (!add_heap_memory(s)) {
       //      klog(LOG_ERROR, "Ran out of memory.");
+      lock_release(&heap_lock);
       return NULL;
     }
+    lock_release(&heap_lock);
     return kmalloc(s);
   }
 
@@ -201,6 +223,7 @@ void *int_kmalloc(size_t s) {
   free_entry->flags = 0;
   free_entry->n = new_entry;
   free_entry->magic = 0xdde51ab9410268b1;
+  lock_release(&heap_lock);
   return rc;
 }
 
@@ -209,6 +232,7 @@ void kfree(void *p) {
     return;
   }
 
+  lock_acquire(&heap_lock);
   MallocHeader *h = (MallocHeader *)((uintptr_t)p - sizeof(MallocHeader));
   assert(h->magic == 0xdde51ab9410268b1);
   assert(!(h->flags & IS_FREE));
@@ -217,6 +241,7 @@ void kfree(void *p) {
 
   h->flags |= IS_FREE;
   merge_headers(h);
+  lock_release(&heap_lock);
 }
 #endif // KMALLOC_DEBUG
 

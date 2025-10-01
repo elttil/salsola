@@ -1,3 +1,4 @@
+#include <arch/amd64/smp.h>
 #include <assert.h>
 #include <kprintf.h>
 #include <mmu.h>
@@ -7,6 +8,16 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+
+bool active_bootstrap = true;
+
+struct kernel_thread {
+  struct mmu_directory *active_directory;
+};
+
+#define MAX_CORES 64
+// FIXME: Limited to 64 cores
+struct kernel_thread kernel_threads[MAX_CORES];
 
 void flush_tlb(void);
 
@@ -59,7 +70,6 @@ uint64_t pow(uint64_t a, uint64_t b) {
 }
 
 struct mmu_directory orig_active_directory;
-struct mmu_directory *active_directory = &orig_active_directory;
 
 #define NUM_OF_FRAMES 256
 
@@ -150,6 +160,8 @@ void *mmu_map_frames(void *src, size_t length) {
     p += PAGE_SIZE;
   }
 
+  uintptr_t offset = (uintptr_t)src & 0xFFF;
+  virtual = (void *)((uintptr_t) virtual + offset);
   return virtual;
 }
 
@@ -165,7 +177,9 @@ uintptr_t *get_page(void *src) {
   uint64_t pdt_index = ((uintptr_t)address >> PDT_SHIFT) & 0x1FF;
   uint64_t pt_index = ((uintptr_t)address >> PT_SHIFT) & 0x1FF;
 
-  return &active_directory->pml4t->pdpt[pml4t_index]
+  struct mmu_directory *directory = mmu_get_active_directory();
+
+  return &directory->pml4t->pdpt[pml4t_index]
               ->pdt[pdpt_index]
               ->pt[pdt_index]
               ->page[pt_index];
@@ -245,24 +259,26 @@ void *mmu_virtual_to_physical(void *address, bool *exists) {
   uint64_t pdt_index = ((uintptr_t)address >> PDT_SHIFT) & 0x1FF;
   uint64_t pt_index = ((uintptr_t)address >> PT_SHIFT) & 0x1FF;
 
-  if (!(active_directory->pml4t->physical[pml4t_index] & PAGE_FLAG_PRESENT)) {
+  struct mmu_directory *directory = mmu_get_active_directory();
+
+  if (!(directory->pml4t->physical[pml4t_index] & PAGE_FLAG_PRESENT)) {
     return NULL;
   }
-  if (!(active_directory->pml4t->pdpt[pml4t_index]->physical[pdpt_index] &
+  if (!(directory->pml4t->pdpt[pml4t_index]->physical[pdpt_index] &
         PAGE_FLAG_PRESENT)) {
     return NULL;
   }
-  if (!(active_directory->pml4t->pdpt[pml4t_index]
+  if (!(directory->pml4t->pdpt[pml4t_index]
             ->pdt[pdpt_index]
             ->physical[pdt_index] &
         PAGE_FLAG_PRESENT)) {
     return NULL;
   }
-  if (!(active_directory->pml4t->physical[pml4t_index] & PAGE_FLAG_PRESENT)) {
+  if (!(directory->pml4t->physical[pml4t_index] & PAGE_FLAG_PRESENT)) {
     return NULL;
   }
 
-  uintptr_t p = active_directory->pml4t->pdpt[pml4t_index]
+  uintptr_t p = directory->pml4t->pdpt[pml4t_index]
                     ->pdt[pdpt_index]
                     ->pt[pdt_index]
                     ->page[pt_index];
@@ -303,23 +319,27 @@ void *safe_allocation(size_t length, void **physical) {
 }
 
 bool allocate_pt(u64 pml4t_index, u64 pdpt_index, u64 pdt_index) {
-  if (!(active_directory->pml4t->physical[pml4t_index] & PAGE_FLAG_PRESENT)) {
+  struct mmu_directory *directory = mmu_get_active_directory();
+
+  // kprintf("pml4t_index: %d\n", pml4t_index);
+  // kprintf("directory: %x\n", directory);
+  if (!(directory->pml4t->physical[pml4t_index] & PAGE_FLAG_PRESENT)) {
     void *physical;
     struct PDPT *pdpt = safe_allocation(sizeof(struct PDPT), &physical);
-    active_directory->pml4t->physical[pml4t_index] = (uintptr_t)physical | 0x3;
-    active_directory->pml4t->pdpt[pml4t_index] = pdpt;
+    directory->pml4t->physical[pml4t_index] = (uintptr_t)physical | 0x3;
+    directory->pml4t->pdpt[pml4t_index] = pdpt;
   }
 
-  if (!(active_directory->pml4t->pdpt[pml4t_index]->physical[pdpt_index] &
+  if (!(directory->pml4t->pdpt[pml4t_index]->physical[pdpt_index] &
         PAGE_FLAG_PRESENT)) {
     void *physical;
     struct PDT *pdt = safe_allocation(sizeof(struct PDT), &physical);
-    active_directory->pml4t->pdpt[pml4t_index]->physical[pdpt_index] =
+    directory->pml4t->pdpt[pml4t_index]->physical[pdpt_index] =
         (uintptr_t)physical | 0x3;
-    active_directory->pml4t->pdpt[pml4t_index]->pdt[pdpt_index] = pdt;
+    directory->pml4t->pdpt[pml4t_index]->pdt[pdpt_index] = pdt;
   }
 
-  if ((active_directory->pml4t->pdpt[pml4t_index]
+  if ((directory->pml4t->pdpt[pml4t_index]
            ->pdt[pdpt_index]
            ->physical[pdt_index] &
        PAGE_FLAG_PRESENT)) {
@@ -329,11 +349,9 @@ bool allocate_pt(u64 pml4t_index, u64 pdpt_index, u64 pdt_index) {
   void *physical;
   void *address = safe_allocation(sizeof(struct PT), &physical);
 
-  active_directory->pml4t->pdpt[pml4t_index]
-      ->pdt[pdpt_index]
-      ->physical[pdt_index] = (uintptr_t)physical | 0x3;
-  active_directory->pml4t->pdpt[pml4t_index]->pdt[pdpt_index]->pt[pdt_index] =
-      address;
+  directory->pml4t->pdpt[pml4t_index]->pdt[pdpt_index]->physical[pdt_index] =
+      (uintptr_t)physical | 0x3;
+  directory->pml4t->pdpt[pml4t_index]->pdt[pdpt_index]->pt[pdt_index] = address;
 
   return true;
 }
@@ -398,7 +416,8 @@ bool check_virtual_region_is_free(void *address, void **physical, bool allocate,
   }
   */
 
-  void **p = (void **)&active_directory->pml4t->pdpt[pml4t_index]
+  struct mmu_directory *directory = mmu_get_active_directory();
+  void **p = (void **)&directory->pml4t->pdpt[pml4t_index]
                  ->pdt[pdpt_index]
                  ->pt[pdt_index]
                  ->page[pt_index];
@@ -469,13 +488,22 @@ void mmu_update_stack(void (*function)()) {
 }
 
 void copy_frame(void *physical_dst, void *physical_src) {
-  void *dst = mmu_map_frames(physical_dst, PAGE_SIZE);
-  void *src = mmu_map_frames(physical_src, PAGE_SIZE);
+  /*
+  if (NULL == (void *)((uintptr_t)physical_src & (~0xFFF))) {
+    return;
+  }
+  */
+  void *dst =
+      mmu_map_frames((void *)((uintptr_t)physical_dst & (~0xFFF)), PAGE_SIZE);
+  void *src =
+      mmu_map_frames((void *)((uintptr_t)physical_src & (~0xFFF)), PAGE_SIZE);
 
   assert(((uintptr_t)physical_dst & (~0xFFF)) ==
-         (uintptr_t)mmu_virtual_to_physical(dst, NULL));
+         ((uintptr_t)mmu_virtual_to_physical(dst, NULL)));
+  //  kprintf("Physical src: %x\n", physical_src);
+  //  kprintf("Virt to physical: %x\n", mmu_virtual_to_physical(src, NULL));
   assert(((uintptr_t)physical_src & (~0xFFF)) ==
-         (uintptr_t)mmu_virtual_to_physical(src, NULL));
+         ((uintptr_t)mmu_virtual_to_physical(src, NULL)));
 
   memcpy(dst, src, PAGE_SIZE);
 
@@ -541,6 +569,9 @@ struct mmu_directory *mmu_clone_directory(struct mmu_directory *directory) {
   new_mmu_directory->physical = physical;
 
   for (int i = 0; i < 511; i++) {
+    if (active_bootstrap && 0 == i) {
+      continue;
+    }
     int flags = directory->pml4t->physical[i] & 0xFFF;
     if (!(flags & PAGE_FLAG_PRESENT)) {
       continue;
@@ -560,15 +591,56 @@ struct mmu_directory *mmu_clone_directory(struct mmu_directory *directory) {
 void set_cr3(void *cr3);
 
 void mmu_set_directory(struct mmu_directory *directory) {
-  active_directory = directory;
-  set_cr3(active_directory->physical);
+  kernel_threads[core_id_get()].active_directory = directory;
+  set_cr3(directory->physical);
+}
+
+void mmu_remove_identity(void) {
+  struct mmu_directory *directory = mmu_get_active_directory();
+  directory->pml4t->pdpt[0] = NULL;
+  directory->pml4t->physical[0] = (uintptr_t)NULL;
 }
 
 struct mmu_directory *mmu_get_active_directory(void) {
-  return active_directory;
+  return kernel_threads[core_id_get()].active_directory;
+}
+
+void set_stack_and_jump(void *, void *);
+void mmu_init_for_new_core(void (*main)(void)) {
+  // Since we currently have no idea what the bootstrapping core is,
+  // search through the kernel_threads, find a valid directory and use
+  // that as the base.
+  struct mmu_directory *base_directory = NULL;
+  for (int i = 0; i < MAX_CORES; i++) {
+    base_directory = kernel_threads[i].active_directory;
+    if (base_directory) {
+      break;
+    }
+  }
+  assert(base_directory);
+
+  // Set the directory now so we can do allocations
+  mmu_set_directory(base_directory);
+
+  struct mmu_directory *new_directory = mmu_clone_directory(base_directory);
+  if (!new_directory) {
+    assert(0);
+    return;
+  }
+
+  new_directory->pml4t->pdpt[0] = base_directory->pml4t->pdpt[0];
+  new_directory->pml4t->physical[0] = base_directory->pml4t->physical[0];
+
+  mmu_set_directory(new_directory);
+
+  void *new_stack = (void *)0xffffff8000000000;
+  set_stack_and_jump(new_stack, main);
 }
 
 int mmu_init(void *multiboot_header) {
+  struct mmu_directory *active_directory = &orig_active_directory;
+  kernel_threads[core_id_get()].active_directory = active_directory;
+
   active_directory->pml4t =
       (struct PML4T *)(((uintptr_t)&PML4T) + 0xffffff8000000000);
   active_directory->physical = &PML4T;
@@ -646,9 +718,6 @@ int mmu_init(void *multiboot_header) {
     }
   }
   set_frame(&PML4T, true);
-
-  active_directory->pml4t->pdpt[0] = NULL;
-  active_directory->pml4t->physical[0] = (uintptr_t)NULL;
 
   ksbrk(0x0);
 
