@@ -1,11 +1,15 @@
 #include <assert.h>
 #include <drivers/pci.h>
+#include <error.h>
+#include <fs/ramfs.h>
+#include <fs/vfs.h>
 #include <kmalloc.h>
 #include <kprintf.h>
 #include <log.h>
 #include <math.h>
 #include <mmu.h>
 #include <string.h>
+#include <sv.h>
 
 #define ATA_DEV_BUSY 0x80
 #define ATA_DEV_DRQ 0x08
@@ -208,7 +212,7 @@ struct HBA_CMD_HEADER {
 #define HBA_PORT_IPM_ACTIVE 1
 #define HBA_PORT_DET_PRESENT 3
 
-u32 check_type(volatile struct HBA_PORT *port) {
+static u32 check_type(volatile struct HBA_PORT *port) {
   u32 ssts = port->ssts;
 
   u8 ipm = (ssts >> 8) & 0x0F;
@@ -233,7 +237,7 @@ u32 check_type(volatile struct HBA_PORT *port) {
   }
 }
 
-void ahci_start_command_execution(volatile struct HBA_PORT *port) {
+static void ahci_start_command_execution(volatile struct HBA_PORT *port) {
   // Wait for it to stop running.
   // TODO: Figure out if this is really required.
   for (; port->cmd & (1 << 14);)
@@ -245,7 +249,7 @@ void ahci_start_command_execution(volatile struct HBA_PORT *port) {
   port->cmd |= ((u32)1 << 0);
 }
 
-void ahci_stop_command_execution(volatile struct HBA_PORT *port) {
+static void ahci_stop_command_execution(volatile struct HBA_PORT *port) {
   // Disable processing of commands
   port->cmd &= ~((u32)1 << 0);
   // Disable recieving FIS into PxFB
@@ -260,8 +264,9 @@ void ahci_stop_command_execution(volatile struct HBA_PORT *port) {
 // fb_address: size has to be 256 and byte aligned to 256
 // command_table_array: size has to be 256*32
 // They are both physical addresses
-void ahci_set_base(volatile struct HBA_PORT *port, void *virt_clb_address,
-                   void *virt_fb_address, void *virt_command_table_array) {
+static void ahci_set_base(volatile struct HBA_PORT *port,
+                          void *virt_clb_address, void *virt_fb_address,
+                          void *virt_command_table_array) {
   u32 clb_address =
       (u32)mmu_virtual_to_physical((void *)virt_clb_address, NULL);
   u32 fb_address = (u32)mmu_virtual_to_physical((void *)virt_fb_address, NULL);
@@ -296,7 +301,7 @@ void ahci_set_base(volatile struct HBA_PORT *port, void *virt_clb_address,
   ahci_start_command_execution(port);
 }
 
-void ahci_sata_setup(volatile struct HBA_PORT *port) {
+static void ahci_sata_setup(volatile struct HBA_PORT *port) {
   // clb_address: size has to be 1024 and byte aligned to 1024
   // fb_address: size has to be 256 and byte aligned to 256
   // command_table_array: size has to be 256*32
@@ -324,7 +329,7 @@ void ahci_sata_setup(volatile struct HBA_PORT *port) {
 
 // Returns the command slot.
 // Sets err if no free slot was found.
-u8 get_free_command_slot(volatile struct HBA_PORT *port, u8 *err) {
+static u8 get_free_command_slot(volatile struct HBA_PORT *port, u8 *err) {
   u8 num_slots = (hba->cap >> 8) & 0x1F;
   u32 slots = (port->sact | port->ci);
   for (u8 i = 0; i < num_slots; i++) {
@@ -338,8 +343,9 @@ u8 get_free_command_slot(volatile struct HBA_PORT *port, u8 *err) {
 }
 
 // is_write: Determins whether a read or write command will be used.
-u8 ahci_perform_command(volatile struct HBA_PORT *port, u32 startl, u32 starth,
-                        u32 count, u16 *buffer, u8 is_write) {
+static u8 ahci_perform_command(volatile struct HBA_PORT *port, u32 startl,
+                               u32 starth, u32 count, u16 *buffer,
+                               u8 is_write) {
   // TODO: The number of PRDT tables are hardcoded at a seemingly
   // very low number. It can be up to 65,535. Should it maybe be
   // changed?
@@ -436,96 +442,74 @@ u8 ahci_perform_command(volatile struct HBA_PORT *port, u32 startl, u32 starth,
   return 1;
 }
 
-u8 ahci_raw_write(volatile struct HBA_PORT *port, u32 startl, u32 starth,
-                  u32 count, u16 *inbuffer) {
+/*
+static u8 ahci_raw_write(volatile struct HBA_PORT *port, u32 startl, u32 starth,
+                         u32 count, u16 *inbuffer) {
   return ahci_perform_command(port, startl, starth, count, inbuffer, 1);
 }
+*/
 
-u8 ahci_raw_read(volatile struct HBA_PORT *port, u32 startl, u32 starth,
-                 u32 count, u16 *outbuffer) {
+static u8 ahci_raw_read(volatile struct HBA_PORT *port, u32 startl, u32 starth,
+                        u32 count, u16 *outbuffer) {
   return ahci_perform_command(port, startl, starth, count, outbuffer, 0);
 }
 
-/*
-int ahci_write(u8 *buffer, u64 offset, u64 len, vfs_fd_t *fd) {
-  vfs_inode_t *inode = fd->inode;
-  int port = inode->inode_num;
+size_t ahci_read(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
+                 int *err) {
+  ASSIGN_ERR(err, ERROR_SUCCESS);
+
+  int port = (int)fd->internal_object;
   assert(port == 0);
   u32 lba = offset / 512;
   offset %= 512;
-  const int rc = len;
+  int rc = length; // FIXME: This almost certainly is not true, but it is
+                   // fine for now since we are using a filesystem
+                   // abstraction anyways.
 
-  u32 sector_count = len / 512;
-  if (len % 512 != 0) {
+  u32 sector_count = length / 512;
+  if (length % 512 != 0) {
     sector_count++;
   }
-
-  if (offset > 0) {
-    u8 tmp_buffer[512];
-    ahci_raw_read(&hba->ports[port], lba, 0, 1, (u16 *)tmp_buffer);
-
-    int left = 512 - offset;
-    int write = min((u64)left, len);
-
-    memcpy(tmp_buffer + offset, buffer, write);
-    ahci_raw_write(&hba->ports[port], lba, 0, 1, (u16 *)tmp_buffer);
-
-    offset = 0;
-    len -= write;
-    sector_count--;
-    lba++;
-  }
-
-  for (; sector_count >= num_prdt; lba++) {
-    ahci_raw_write(&hba->ports[port], lba, 0, num_prdt, (u16 *)buffer);
-    buffer += num_prdt * 512;
-    len -= num_prdt * 512;
-    sector_count -= num_prdt;
-  }
-
-  if (sector_count > 0 && (0 == len % SECTOR_SIZE)) {
-    ahci_raw_write(&hba->ports[port], lba, 0, sector_count, (u16 *)buffer);
-    return rc;
-  }
-
-  if (sector_count > 0 && len > 0) {
-    u8 tmp_buffer[512 * sector_count];
-    ahci_raw_read(&hba->ports[port], lba, 0, sector_count, (u16 *)tmp_buffer);
-    memcpy(tmp_buffer + offset, buffer, len);
-    ahci_raw_write(&hba->ports[port], lba, 0, sector_count, (u16 *)tmp_buffer);
-  }
-  return rc;
-}
-
-int ahci_read(u8 *buffer, u64 offset, u64 len, vfs_fd_t *fd) {
-  vfs_inode_t *inode = fd->inode;
-  int port = inode->inode_num;
-  assert(port == 0);
-  u32 lba = offset / 512;
-  offset %= 512;
-  int rc = len;
-
-  u32 sector_count = len / 512;
-  if (len % 512 != 0) {
-    sector_count++;
-  }
-  u8 tmp_buffer[512 * num_prdt];
+  // FIXME: There is something wrong with the stack for large
+  // allocations.
+  // u8 tmp_buffer[512 * num_prdt];
+  u8 *tmp_buffer = kmalloc(512 * num_prdt);
   for (; sector_count >= num_prdt; lba++) {
     ahci_raw_read(&hba->ports[port], lba, 0, num_prdt, (u16 *)tmp_buffer);
     memcpy(buffer, tmp_buffer + offset, 512 * num_prdt);
     offset = 0;
     buffer += num_prdt * 512;
-    len -= num_prdt * 512;
+    length -= num_prdt * 512;
     sector_count -= num_prdt;
   }
+  kfree(tmp_buffer);
 
   if (sector_count > 0) {
     ahci_raw_read(&hba->ports[port], lba, 0, sector_count, (u16 *)tmp_buffer);
-    memcpy(buffer, tmp_buffer + offset, len);
+    memcpy(buffer, tmp_buffer + offset, length);
   }
   return rc;
 }
-*/
+
+bool ahci_open(struct vfs_fd *fd, struct sv file, int flags,
+               void *internal_object, int *err) {
+  (void)fd;
+  (void)file;
+  (void)flags;
+  (void)err;
+  fd->internal_object = internal_object;
+  fd->read = ahci_read;
+  kprintf("TEST OPEN\n");
+  kprintf("Internal object: %p\n", internal_object);
+  return true;
+}
+
+static bool add_sata_file(struct sv filename, int i) {
+  struct vfs_mount *mount = vfs_find_mount(C_TO_SV("/dev"));
+  assert(mount);
+  assert(ramfs_add_file(mount, filename, ahci_open, (void *)i, NULL));
+  return true;
+}
 
 bool ahci_init(void) {
   struct pci_device device;
@@ -552,7 +536,7 @@ bool ahci_init(void) {
     switch (type) {
     case AHCI_DEV_SATA:
       ahci_sata_setup(&hba->ports[i]);
-      //      add_devfs_drive_file(i);
+      add_sata_file(C_TO_SV("/dev/sda"), i);
       kprintf("SATA drive found at port %d\n", i);
       break;
     case AHCI_DEV_SATAPI:

@@ -20,8 +20,26 @@ struct vfs_mount *vfs_find_mount(struct sv path) {
   return NULL;
 }
 
+size_t vfs_pread(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
+                 int *err) {
+  assert(fd);
+  assert(fd->read);
+  return fd->read(fd, buffer, length, offset, err);
+}
+
+size_t vfs_read(struct vfs_fd *fd, void *buffer, size_t length, int *err) {
+  assert(fd);
+  assert(fd->read);
+  size_t r = fd->read(fd, buffer, length, fd->offset, err);
+  fd->offset += r;
+  return r;
+}
+
 bool vfs_add_mount(struct sv path, struct vfs_mount *root) {
-  assert(!vfs_find_mount(path));
+  if (!root) {
+    return false;
+  }
+  //  assert(!vfs_find_mount(path));
 
   struct mount_list *mount = kmalloc(sizeof(struct mount_list));
   if (!mount) {
@@ -37,10 +55,20 @@ bool vfs_add_mount(struct sv path, struct vfs_mount *root) {
   return true;
 }
 
+void vfs_close(struct vfs_fd *fd) {
+  if (fd->close) {
+    fd->close(fd);
+  }
+  kfree(fd);
+}
+
 struct vfs_fd *vfs_open(struct sv file, int flags, int *err) {
   struct vfs_mount *mount = vfs_find_mount(file);
   assert(mount); // TODO
+  assert(mount->open);
 
   (void)sv_take(file, &file, sv_length(mount->path));
-  return mount->open(mount, file, flags, err);
+  struct vfs_fd *fd = mount->open(mount, file, flags, err);
+  fd->mount = mount;
+  return fd;
 }
