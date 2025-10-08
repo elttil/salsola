@@ -21,8 +21,6 @@ struct kernel_thread kernel_threads[MAX_CORES];
 
 void flush_tlb(void);
 
-#define PAGE_SIZE 0x1000
-
 #define PAGE_FLAG_PRESENT (1 << 0)
 
 struct PT {
@@ -46,14 +44,6 @@ struct PML4T {
 
 bool check_virtual_region_is_free(void *address, void **physical, bool allocate,
                                   bool use_frame, void *frame);
-
-// Depends upon a C version after C99 since it uses `typeof`
-#define align_up(address, alignment)                                           \
-  ((0 == ((uintptr_t)address) % ((uintptr_t)alignment))                        \
-       ? (address)                                                             \
-       : (typeof(address))((((uintptr_t)address) -                             \
-                            ((uintptr_t)address % alignment)) +                \
-                           ((uintptr_t)alignment)))
 
 extern struct PML4T PML4T;
 
@@ -469,6 +459,17 @@ void set_sbp(void *);
 
 void goto_function_with_stack(void *, void *);
 
+bool mmu_allocate_region(void *address, size_t length, int flags) {
+  // TODO: Handle flags
+  (void)flags;
+  for (size_t i = 0x0; i < length; i += PAGE_SIZE) {
+    assert(check_virtual_region_is_free((void *)((uintptr_t)address + i), NULL,
+                                        true, false, NULL));
+  }
+  // TODO: Error check
+  return true;
+}
+
 // Moves the stack to its own PDPT.
 // NOTE: Index starts counting from 0
 // PDPT index 511 is reserved for the shared kernel address space.
@@ -548,7 +549,7 @@ bool clone_pdpt(struct PDPT *orig_pdpt, struct PDPT **new_pdpt,
   *new_pdpt = safe_allocation(sizeof(struct PDPT), physical);
 
   for (int i = 0; i < 512; i++) {
-    int flags = orig_pdpt->physical[i];
+    int flags = orig_pdpt->physical[i] & 0xFFF;
     if (!(flags & PAGE_FLAG_PRESENT)) {
       continue;
     }

@@ -3,6 +3,18 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#define MMU_FLAG_RW (1<<0)
+
+// Depends upon a C version after C99 since it uses `typeof`
+#define align_up(address, alignment)                                           \
+  ((0 == ((uintptr_t)address) % ((uintptr_t)alignment))                        \
+       ? (address)                                                             \
+       : (typeof(address))((((uintptr_t)address) -                             \
+                            ((uintptr_t)address % alignment)) +                \
+                           ((uintptr_t)alignment)))
+
+#define PAGE_SIZE 0x1000
+
 struct PML4T;
 struct mmu_directory {
   struct PML4T *pml4t;
@@ -22,4 +34,5 @@ void mmu_set_directory(struct mmu_directory *directory);
 void mmu_unmap_frames(void *src, size_t length);
 void mmu_remove_identity(void);
 void mmu_init_for_new_core(void (*main)(void));
+bool mmu_allocate_region(void *address, size_t length, int flags);
 #endif // MMU_H
