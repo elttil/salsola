@@ -49,6 +49,12 @@ inb:
 	in al, dx
 	ret
 
+global flush_tss
+flush_tss:
+	mov ax, 40
+	ltr ax
+	ret
+
 global set_stack_and_jump
 set_stack_and_jump:
 	mov rsp, rdi

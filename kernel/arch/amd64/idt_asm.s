@@ -337,6 +337,11 @@ ISR_NOERRCODE 255
 extern interrupt_dispatch
 global interrupt_stub
 interrupt_stub:
+;	mov rax, 0x1000
+;	mov rbx, 0
+;	mov [rax], rbx
+;	add rsp, 16
+;	iretq
 
 	push r15
 	push r14

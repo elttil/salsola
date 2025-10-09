@@ -1,6 +1,8 @@
 #ifndef TASK_H
 #define TASK_H
 #include <mmu.h>
+#include <stdbool.h>
+#include <sv.h>
 #include <typedefs.h>
 
 struct tcb {
@@ -20,4 +22,5 @@ struct task {
 bool task_init(void);
 u64 task_fork(bool *err);
 void task_legacy_switch(void);
+void task_exec(struct sv file);
 #endif // TASK_H

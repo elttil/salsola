@@ -69,6 +69,9 @@ struct vfs_fd *vfs_open(struct sv file, int flags, int *err) {
 
   (void)sv_take(file, &file, sv_length(mount->path));
   struct vfs_fd *fd = mount->open(mount, file, flags, err);
+  if (!fd) {
+    return NULL;
+  }
   fd->mount = mount;
   return fd;
 }

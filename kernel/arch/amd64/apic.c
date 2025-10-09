@@ -1,5 +1,6 @@
 #include <arch/amd64/apic.h>
 #include <arch/amd64/msr.h>
+#include <kprintf.h>
 #include <mmu.h>
 #include <stddef.h>
 
@@ -65,6 +66,8 @@ bool apic_enable(void) {
 
   apic_map_base();
 
-  apic_write_register(0xF0, apic_read_register(0xF0) | 0x100);
+  apic_write_register(0xF0, apic_read_register(0xF0) | (1 << 8));
+  kprintf("REGISTER: %x\n", apic_read_register(0xF0));
+  // apic_write_register(0xF0, apic_read_register(0xF0) | 0xFF);
   return true;
 }

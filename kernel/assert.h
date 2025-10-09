@@ -7,4 +7,6 @@
     }                                                                          \
   }
 
+#define ASSERT_BUT_FIXME_PROPOGATE(expr) assert(expr)
+
 void aFailed(char *f, int l);

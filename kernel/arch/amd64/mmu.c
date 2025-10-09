@@ -1,6 +1,5 @@
 #include <arch/amd64/smp.h>
 #include <assert.h>
-#include <kprintf.h>
 #include <mmu.h>
 #include <multiboot2.h>
 #include <prng.h>
@@ -43,7 +42,7 @@ struct PML4T {
 };
 
 bool check_virtual_region_is_free(void *address, void **physical, bool allocate,
-                                  bool use_frame, void *frame);
+                                  bool use_frame, void *frame, u32 flags);
 
 extern struct PML4T PML4T;
 
@@ -75,9 +74,9 @@ static inline bool set_frame(void *address, bool state) {
   }
   size_t offset = a % 64;
   if (state) {
-    frames[index] |= (1 << offset);
+    frames[index] |= ((u64)1 << offset);
   } else {
-    frames[index] &= ~(1 << offset);
+    frames[index] &= ~((u64)1 << offset);
   }
   return true;
 }
@@ -93,7 +92,7 @@ void *get_frame(bool allocate, u64 count) {
     }
 
     for (size_t j = 0; j < 64; j++) {
-      if (frames[i] & (1 << j)) {
+      if (frames[i] & ((u64)1 << j)) {
         left = count;
         continue;
       }
@@ -118,7 +117,7 @@ void *get_frame(bool allocate, u64 count) {
   return NULL;
 }
 
-void allocate_next_pt(void *address);
+void allocate_next_pt(void *address, u32 flags);
 
 void *heap_end;
 
@@ -127,7 +126,7 @@ void *mmu_find_free_virtual_region(size_t length) {
     bool is_free = true;
     for (size_t i = 0; i < length; i += PAGE_SIZE) {
       void *address = (void *)((uintptr_t)heap_end + offset + i);
-      if (!check_virtual_region_is_free(address, NULL, false, false, NULL)) {
+      if (!check_virtual_region_is_free(address, NULL, false, false, NULL, 0)) {
         is_free = false;
         break;
       }
@@ -146,7 +145,8 @@ void *mmu_map_frames(void *src, size_t length) {
   uintptr_t p = (uintptr_t)src;
   for (size_t i = 0; i < length; i += PAGE_SIZE) {
     assert(check_virtual_region_is_free((void *)((uintptr_t) virtual + i), NULL,
-                                        true, true, (void *)p));
+                                        true, true, (void *)p,
+                                        MMU_FLAG_RW | MMU_FLAG_PRESENT));
     p += PAGE_SIZE;
   }
 
@@ -193,7 +193,7 @@ void *ksbrk_physical(size_t length, void **physical) {
   heap_end = mmu_find_free_virtual_region(length);
   void *rc = heap_end;
 
-  allocate_next_pt(heap_end);
+  allocate_next_pt(heap_end, MMU_FLAG_PRESENT | MMU_FLAG_RW);
   if (0 == length) {
     return NULL;
   }
@@ -214,8 +214,8 @@ void *ksbrk_physical(size_t length, void **physical) {
     // allocations. This does also mean some frames(and address space)
     // get lost forever, but it **should** not be that much. Maybe
     // allocate an extra table in boot.s to avoid this hack?
-    bool was_free =
-        check_virtual_region_is_free(heap_end, &physical, true, false, NULL);
+    bool was_free = check_virtual_region_is_free(
+        heap_end, &physical, true, false, NULL, MMU_FLAG_RW | MMU_FLAG_PRESENT);
     assert(was_free);
 
     if (!r) {
@@ -300,7 +300,8 @@ void *safe_allocation(size_t length, void **physical) {
   uintptr_t phys_ptr = (uintptr_t)p;
   for (size_t i = 0; i < length / PAGE_SIZE; i++) {
     assert(check_virtual_region_is_free((void *)ptr, NULL, true, true,
-                                        (void *)phys_ptr));
+                                        (void *)phys_ptr,
+                                        MMU_FLAG_RW | MMU_FLAG_PRESENT));
     phys_ptr += PAGE_SIZE;
     ptr += PAGE_SIZE;
   }
@@ -308,15 +309,13 @@ void *safe_allocation(size_t length, void **physical) {
   return a;
 }
 
-bool allocate_pt(u64 pml4t_index, u64 pdpt_index, u64 pdt_index) {
+bool allocate_pt(u64 pml4t_index, u64 pdpt_index, u64 pdt_index, u32 flags) {
   struct mmu_directory *directory = mmu_get_active_directory();
 
-  // kprintf("pml4t_index: %d\n", pml4t_index);
-  // kprintf("directory: %x\n", directory);
   if (!(directory->pml4t->physical[pml4t_index] & PAGE_FLAG_PRESENT)) {
     void *physical;
     struct PDPT *pdpt = safe_allocation(sizeof(struct PDPT), &physical);
-    directory->pml4t->physical[pml4t_index] = (uintptr_t)physical | 0x3;
+    directory->pml4t->physical[pml4t_index] = (uintptr_t)physical | flags;
     directory->pml4t->pdpt[pml4t_index] = pdpt;
   }
 
@@ -325,7 +324,7 @@ bool allocate_pt(u64 pml4t_index, u64 pdpt_index, u64 pdt_index) {
     void *physical;
     struct PDT *pdt = safe_allocation(sizeof(struct PDT), &physical);
     directory->pml4t->pdpt[pml4t_index]->physical[pdpt_index] =
-        (uintptr_t)physical | 0x3;
+        (uintptr_t)physical | flags;
     directory->pml4t->pdpt[pml4t_index]->pdt[pdpt_index] = pdt;
   }
 
@@ -340,13 +339,13 @@ bool allocate_pt(u64 pml4t_index, u64 pdpt_index, u64 pdt_index) {
   void *address = safe_allocation(sizeof(struct PT), &physical);
 
   directory->pml4t->pdpt[pml4t_index]->pdt[pdpt_index]->physical[pdt_index] =
-      (uintptr_t)physical | 0x3;
+      (uintptr_t)physical | flags;
   directory->pml4t->pdpt[pml4t_index]->pdt[pdpt_index]->pt[pdt_index] = address;
 
   return true;
 }
 
-void allocate_next_pt(void *address) {
+void allocate_next_pt(void *address, u32 flags) {
   //  const int PT_SHIFT = 12;
   const int PDT_SHIFT = 12 + 9 * 1;
   const int PDPT_SHIFT = 12 + 9 * 2;
@@ -357,8 +356,8 @@ void allocate_next_pt(void *address) {
   uint64_t pdt_index = ((uintptr_t)address >> PDT_SHIFT) & 0x1FF;
   //  uint64_t pt_index = ((uintptr_t)address >> PT_SHIFT) & 0x1FF;
 
-  allocate_pt(pml4t_index, pdpt_index, pdt_index);
-  allocate_pt(pml4t_index, pdpt_index, pdt_index + 1);
+  allocate_pt(pml4t_index, pdpt_index, pdt_index, flags);
+  allocate_pt(pml4t_index, pdpt_index, pdt_index + 1, flags);
 }
 
 // if allocate == false:
@@ -369,7 +368,7 @@ void allocate_next_pt(void *address) {
 //   Returns false if region did not allocate
 //   Return true if the region did not exist and was allocated
 bool check_virtual_region_is_free(void *address, void **physical, bool allocate,
-                                  bool use_frame, void *frame) {
+                                  bool use_frame, void *frame, u32 flags) {
   const int PT_SHIFT = 12;
   const int PDT_SHIFT = 12 + 9 * 1;
   const int PDPT_SHIFT = 12 + 9 * 2;
@@ -382,29 +381,7 @@ bool check_virtual_region_is_free(void *address, void **physical, bool allocate,
 
   bool region_exists = true;
 
-  allocate_pt(pml4t_index, pdpt_index, pdt_index);
-  /*
-  if (!(active_directory->physical[pml4t_index] & 0x1)) {
-    kprintf("ERROR 1\n");
-    assert(!allocate);
-    region_exists = false;
-    goto check_return;
-  }
-  if (!(active_directory->pdpt[pml4t_index]->physical[pdpt_index] & 0x1)) {
-    kprintf("ERROR 2\n");
-    assert(!allocate);
-    region_exists = false;
-    goto check_return;
-  }
-  if (!(active_directory->pdpt[pml4t_index]
-            ->pdt[pdpt_index]
-            ->physical[pdt_index] &
-        0x1)) {
-    assert(!allocate);
-    region_exists = false;
-    goto check_return;
-  }
-  */
+  allocate_pt(pml4t_index, pdpt_index, pdt_index, flags);
 
   struct mmu_directory *directory = mmu_get_active_directory();
   void **p = (void **)&directory->pml4t->pdpt[pml4t_index]
@@ -419,7 +396,7 @@ bool check_virtual_region_is_free(void *address, void **physical, bool allocate,
         frame = get_frame(true, 1);
       }
       *p = frame;
-      *p = (void *)((uintptr_t)*p | 0x3);
+      *p = (void *)((uintptr_t)*p | flags | MMU_FLAG_PRESENT);
       if (physical) {
         *physical = (void *)((uintptr_t)(*p) & ~(0xFFF));
       }
@@ -460,11 +437,10 @@ void set_sbp(void *);
 void goto_function_with_stack(void *, void *);
 
 bool mmu_allocate_region(void *address, size_t length, int flags) {
-  // TODO: Handle flags
-  (void)flags;
   for (size_t i = 0x0; i < length; i += PAGE_SIZE) {
     assert(check_virtual_region_is_free((void *)((uintptr_t)address + i), NULL,
-                                        true, false, NULL));
+                                        true, false, NULL,
+                                        flags | MMU_FLAG_PRESENT));
   }
   // TODO: Error check
   return true;
@@ -482,18 +458,14 @@ void mmu_update_stack(void (*function)()) {
 
   for (size_t i = 0x1000; i < stack_size; i += PAGE_SIZE) {
     assert(check_virtual_region_is_free((void *)((uintptr_t)new_stack - i),
-                                        NULL, true, false, NULL));
+                                        NULL, true, false, NULL,
+                                        MMU_FLAG_RW | MMU_FLAG_PRESENT));
   }
 
   goto_function_with_stack(function, new_stack);
 }
 
 void copy_frame(void *physical_dst, void *physical_src) {
-  /*
-  if (NULL == (void *)((uintptr_t)physical_src & (~0xFFF))) {
-    return;
-  }
-  */
   void *dst =
       mmu_map_frames((void *)((uintptr_t)physical_dst & (~0xFFF)), PAGE_SIZE);
   void *src =
@@ -501,8 +473,6 @@ void copy_frame(void *physical_dst, void *physical_src) {
 
   assert(((uintptr_t)physical_dst & (~0xFFF)) ==
          ((uintptr_t)mmu_virtual_to_physical(dst, NULL)));
-  //  kprintf("Physical src: %x\n", physical_src);
-  //  kprintf("Virt to physical: %x\n", mmu_virtual_to_physical(src, NULL));
   assert(((uintptr_t)physical_src & (~0xFFF)) ==
          ((uintptr_t)mmu_virtual_to_physical(src, NULL)));
 
@@ -590,6 +560,10 @@ struct mmu_directory *mmu_clone_directory(struct mmu_directory *directory) {
 
 // TODO: Put this in a header
 void set_cr3(void *cr3);
+
+void mmu_lazy_set_directory(struct mmu_directory *directory) {
+  kernel_threads[core_id_get()].active_directory = directory;
+}
 
 void mmu_set_directory(struct mmu_directory *directory) {
   kernel_threads[core_id_get()].active_directory = directory;

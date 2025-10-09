@@ -1,3 +1,4 @@
+#include <arch/amd64/gdt.h>
 #include <arch/amd64/msr.h>
 #include <arch/amd64/regs.h>
 #include <arch/amd64/smp.h>
@@ -80,7 +81,6 @@ void udelay(int s) {
   //  }
 }
 
-// void ap_trampoline();
 volatile u8 bspdone = 0;
 volatile uint8_t aprunning = 0; // count how many APs have started
 extern volatile u32 trampoline_cr3;
@@ -189,7 +189,6 @@ void core_main() {
     ;
 }
 
-void gdt_init();
 void ap_startup() {
   kprintf("\nap_startup bspid: %d\n", bspid_get());
   gdt_init();

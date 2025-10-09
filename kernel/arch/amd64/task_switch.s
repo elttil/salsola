@@ -27,6 +27,7 @@ weird_switch2:
 		mov [rsp], rax
 
 		push rbx
+		push rbp
 		push r12
 		push r13
 		push r14
@@ -34,7 +35,7 @@ weird_switch2:
 
 		mov [rdi], rsp
 
-		add rsp, 8*5
+		add rsp, 8*6
 
 	mov cr3, r8
 	ret
@@ -43,6 +44,7 @@ weird_switch2:
 ; args: rdi, rsi
 switch_to_task:
 	push rbx
+	push rbp
 	push r12
 	push r13
 	push r14
@@ -70,7 +72,44 @@ switch_to_task:
 	pop r14
 	pop r13
 	pop r12
+	pop rbp
 	pop rbx
  
     sti
     ret
+
+global jump_usermode
+jump_usermode:
+	mov ax, (4 * 8) | 3 ; ring 3 data with bottom 2 bits set for ring 3
+	mov ds, ax
+	mov es, ax 
+	mov fs, ax 
+	mov gs, ax ; SS is handled by iret
+
+	; set up the stack frame iret expects
+	push (4 * 8) | 3 ; data selector
+	push rsi ; current esp
+	pushf ; eflags
+	push (3 * 8) | 3 ; code selector (ring 3 code with bottom 2 bits set for ring 3)
+	push rdi ; instruction address to return to
+	iretq
+
+
+jump_usermode2:
+	mov ax, (4 * 8) | 3 ; user data segment with RPL 3
+	mov ds, ax
+	mov es, ax
+	mov fs, ax
+	mov gs, ax ; sysexit sets SS
+
+	; setup wrmsr inputs
+	xor rdx, rdx ; not necessary; set to 0
+	mov rax, 0x8 ; the segments are computed as follows: CS=MSR+0x10 (0x8+0x10=0x18), SS=MSR+0x18 (0x8+0x18=0x20).
+	mov rcx, 0x174 ; MSR specifier: IA32_SYSENTER_CS
+	wrmsr ; set sysexit segments
+
+	; setup sysexit inputs
+	mov rdx, rdi ; to be loaded into EIP
+;	mov rcx, rsp ; to be loaded into ESP
+	mov rcx, rsi ; to be loaded into ESP
+	sysexit

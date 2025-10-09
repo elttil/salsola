@@ -4,6 +4,7 @@
 #include <drivers/pit.h>
 #include <drivers/ps2_keyboard.h>
 #include <drivers/serial.h>
+#include <fs/ext2.h>
 #include <fs/ramfs.h>
 #include <fs/vfs.h>
 #include <kmalloc.h>
@@ -28,47 +29,37 @@ struct multiboot_tag *tags;
 void kmain2(void) {
   assert(kmalloc_init());
 
-  // assert(ps2_keyboard_init());
-
-  // ahci_init();
-
-  //  assert(task_init());
-
-  // pit_install();
-  // pit_set_count(2);
-
   assert(msr_is_available());
-
-  //  msr_set(0x0, 0x41);
-  // u64 v = msr_get(0x10);
-  // kprintf("msr_get(0x0): %x\n", v);
-
-  //  kprintf("rdtsc: %x\n", rdtsc());
-  //  kprintf("rdtsc: %x\n", rdtsc());
 
   idt_init();
   assert(apic_enable());
 
-  smp_init(tags);
+  assert(ps2_keyboard_init());
+
+  // smp_init(tags);
   mmu_remove_identity();
 
-  for (;;)
-    ;
+  assert(task_init());
 
-  vfs_add_mount(C_TO_SV("/"), ramfs_init());
-  vfs_open(C_TO_SV("/test.txt"), 0, NULL);
+  pit_install();
+  pit_set_count(2);
 
-  /*
+  vfs_add_mount(C_TO_SV("/dev"), ramfs_create());
+
+  ahci_init();
+
+  struct vfs_fd *sda_fd = vfs_open(C_TO_SV("/dev/sda"), 0, NULL);
+
+  vfs_add_mount(C_TO_SV("/"), ext2_create(sda_fd));
+
+  __asm__("sti");
+
   int pid = task_fork(NULL);
   if (0 == pid) {
-    for (;;) {
-      kprintf("child\n");
-    }
+    task_exec(C_TO_SV("/init"));
+    assert(0);
   }
-  for (;;) {
-    kprintf("parent\n");
-  }
-  */
+  task_legacy_switch();
   for (;;)
     ;
 }

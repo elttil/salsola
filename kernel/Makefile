@@ -1,13 +1,14 @@
 CC="x86_64-elf-gcc"
 AS="x86_64-elf-as"
-ARCH_OBJ=arch/amd64/boot.o arch/amd64/io.o arch/amd64/regs.o arch/amd64/mmu.o assert.o kmalloc.o crypto/ChaCha20/chacha20.o crypto/SHA1/sha1.o crypto/xoshiro256plusplus/xoshiro256plusplus.o csprng.o prng.o arch/amd64/idt.o arch/amd64/idt_asm.o drivers/ps2_keyboard.o ringbuffer.o drivers/pci.o drivers/ahci.o log.o arch/amd64/gdt.o task.o arch/amd64/task_switch.o drivers/pit.o sv.o ctype.o fs/vfs.o fs/ramfs.o arch/amd64/msr.o arch/amd64/apic.o arch/amd64/smp.o arch/amd64/lock.o arch/amd64/smp_asm.o fs/ext2.o
+ARCH_OBJ=arch/amd64/boot.o arch/amd64/io.o arch/amd64/regs.o arch/amd64/mmu.o assert.o kmalloc.o crypto/ChaCha20/chacha20.o crypto/SHA1/sha1.o crypto/xoshiro256plusplus/xoshiro256plusplus.o csprng.o prng.o arch/amd64/idt.o arch/amd64/idt_asm.o drivers/ps2_keyboard.o ringbuffer.o drivers/pci.o drivers/ahci.o log.o arch/amd64/gdt.o task.o arch/amd64/task_switch.o drivers/pit.o sv.o ctype.o fs/vfs.o fs/ramfs.o arch/amd64/msr.o arch/amd64/apic.o arch/amd64/smp.o arch/amd64/lock.o arch/amd64/smp_asm.o fs/ext2.o elf.o ubsan.o
 OBJ = $(ARCH_OBJ) kernel.o drivers/serial.o kprintf.o string.o
-CFLAGS = -std=c2x -Os -mcmodel=large -ggdb -ffreestanding -Wall -Wextra -Werror -mgeneral-regs-only -mno-red-zone\
+CFLAGS = -std=c2x -O0 -mcmodel=large -ggdb -ffreestanding -Wall -Wextra -Werror -mgeneral-regs-only -mno-red-zone\
 		 -Wno-int-to-pointer-cast \
-		 -Wno-pointer-to-int-cast
+		 -Wno-pointer-to-int-cast \
+		-fsanitize=vla-bound,shift-exponent,pointer-overflow,shift,signed-integer-overflow,bounds
 ASMFLAGS= -g -felf64
 LDFLAGS= -zmax-page-size=0x1000
-INCLUDE= -I./arch/includes/ -I.
+INCLUDE= -I./arch/includes/ -I. -I../include/
 QEMU=~/prj/qemu-10.1.0/build/qemu-system-x86_64
 
 all: myos.iso

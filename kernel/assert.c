@@ -2,6 +2,7 @@
 #include <kprintf.h>
 
 __attribute__((__noreturn__)) void aFailed(char *f, int l) {
+  __asm__("cli");
   kprintf("Assert failed\n");
   kprintf("%s : %d\n", f, l);
   for (;;)

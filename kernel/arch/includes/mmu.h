@@ -3,7 +3,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#define MMU_FLAG_RW (1<<0)
+#define MMU_FLAG_PRESENT (1 << 0)
+#define MMU_FLAG_RW (1 << 1)
+#define MMU_FLAG_USER (1 << 2)
 
 // Depends upon a C version after C99 since it uses `typeof`
 #define align_up(address, alignment)                                           \
@@ -35,4 +37,5 @@ void mmu_unmap_frames(void *src, size_t length);
 void mmu_remove_identity(void);
 void mmu_init_for_new_core(void (*main)(void));
 bool mmu_allocate_region(void *address, size_t length, int flags);
+void mmu_lazy_set_directory(struct mmu_directory *directory);
 #endif // MMU_H
