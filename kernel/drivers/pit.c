@@ -50,5 +50,5 @@ void int_clock(struct cpu_status *r) {
 }
 
 void pit_install(void) {
-  handler_install(0x20, int_clock);
+  handler_install(0x20, int_clock, 0);
 }

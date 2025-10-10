@@ -258,15 +258,15 @@ static bool find_inode(struct ext2_ctx *ctx, struct sv file, u32 *inode,
 }
 
 size_t ext2_read(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
-                 int *err) {
-  ASSIGN_ERR(err, ERROR_SUCCESS);
+                 err_t *err) {
+  ASSIGN_PTR(err, ERROR_SUCCESS);
   struct ext2_ctx *ctx = (struct ext2_ctx *)fd->mount->internal_object;
   u32 inode_num = (u32)fd->internal_object;
   return read_inode(ctx, inode_num, buffer, length, offset, NULL);
 }
 
 struct vfs_fd *ext2_open(struct vfs_mount *mount, struct sv file, int flags,
-                         int *err) {
+                         err_t *err) {
   (void)flags;
   struct ext2_ctx *ctx = (struct ext2_ctx *)mount->internal_object;
 
@@ -275,13 +275,13 @@ struct vfs_fd *ext2_open(struct vfs_mount *mount, struct sv file, int flags,
   u32 inode_num;
   if (!find_inode(ctx, file, &inode_num, NULL)) {
     kprintf("failed find inode\n");
-    ASSIGN_ERR(err, ERROR_NO_FILE);
+    ASSIGN_PTR(err, ERROR_NO_FILE);
     return NULL;
   }
 
   struct vfs_fd *fd = kmalloc(sizeof(struct vfs_fd));
   if (!fd) {
-    ASSIGN_ERR(err, ERROR_NO_MEMORY);
+    ASSIGN_PTR(err, ERROR_NO_MEMORY);
     return NULL;
   }
   fd->close = NULL;
@@ -295,12 +295,12 @@ struct vfs_fd *ext2_open(struct vfs_mount *mount, struct sv file, int flags,
   return fd;
 }
 
-static bool parse_superblock(struct ext2_ctx *ctx, int *rc_err) {
-  int err;
+static bool parse_superblock(struct ext2_ctx *ctx, err_t *rc_err) {
+  err_t err;
   vfs_pread(ctx->fd, &ctx->superblock, 2 * SECTOR_SIZE,
             EXT2_SUPERBLOCK_SECTOR * SECTOR_SIZE, &err);
   if (ERROR_SUCCESS != err) {
-    ASSIGN_ERR(rc_err, err);
+    ASSIGN_PTR(rc_err, err);
     return false;
   }
 
@@ -308,7 +308,7 @@ static bool parse_superblock(struct ext2_ctx *ctx, int *rc_err) {
 
   if (0xEF53 != ctx->superblock.ext2_signature) {
     klog(LOG_ERROR, "Incorrect ext2 signature in superblock.");
-    ASSIGN_ERR(rc_err, ERROR_INVALID_FORMAT);
+    ASSIGN_PTR(rc_err, ERROR_INVALID_FORMAT);
     return false;
   }
 

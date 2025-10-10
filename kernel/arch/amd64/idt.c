@@ -193,11 +193,11 @@ void page_fault(struct cpu_status *r) {
     ;
 }
 
-void handler_install(uint8_t num, interrupt_handler handler) {
+void handler_install(uint8_t num, interrupt_handler handler, int dpl) {
   if (num >= 0x20) {
     irq_clear_mask(num - 0x20);
   }
-  set_idt_entry(num, (void *)isr_list[num], 0);
+  set_idt_entry(num, (void *)isr_list[num], dpl);
   list_of_handlers[num] = (interrupt_handler)handler;
 }
 
@@ -209,7 +209,7 @@ void idt_init(void) {
     irq_set_mask(i);
   }
 
-  //  handler_install(0x0E, page_fault);
+  handler_install(0x0E, page_fault, 0);
 
   load_idt(idt);
   interrupts_enable();

@@ -35,7 +35,7 @@ typedef void(*interrupt_handler)(struct cpu_status *);
 void idt_init(void);
 void interrupts_enable(void);
 void interrupts_disable(void);
-void handler_install(uint8_t num, interrupt_handler handler);
+void handler_install(uint8_t num, interrupt_handler handler, int dpl);
 void eoi(u8 irq);
 
 void isr0();

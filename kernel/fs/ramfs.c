@@ -39,10 +39,10 @@ struct vfs_fd *ramfs_open(struct vfs_mount *mount, struct sv file, int flags,
 bool ramfs_add_file(struct vfs_mount *mount, struct sv file,
                     bool (*open)(struct vfs_fd *fd, struct sv file, int flags,
                                  void *internal_object, int *err),
-                    void *internal_object, int *err) {
+                    void *internal_object, err_t *err) {
   struct ramfs_file *new_file = kmalloc(sizeof(struct ramfs_file));
   if (!new_file) {
-    ASSIGN_ERR(err, ERROR_NO_MEMORY);
+    ASSIGN_PTR(err, ERROR_NO_MEMORY);
     return false;
   }
 

@@ -156,6 +156,6 @@ bool ps2_keyboard_init(void) {
   //  if (!ringbuffer_init(&keyboard_buffer, sizeof(struct key_event) * 128)) {
   //    return false;
   //  }
-  handler_install(0x21, keyboard_handler);
+  handler_install(0x21, keyboard_handler, 0);
   return true;
 }

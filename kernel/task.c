@@ -55,16 +55,13 @@ void task_exec(struct sv file) {
   assert(0);
 }
 
-u64 task_fork(bool *err) {
-  PTR_ASSIGN(err, false);
-
+err_t task_fork(u64 *pid) {
   struct task *parent = task_current;
   assert(parent);
 
   struct task *task = kmalloc(sizeof(struct task));
   if (!task) {
-    PTR_ASSIGN(err, true);
-    return false;
+    return ERROR_NO_MEMORY;
   }
   task->pid = active_pid;
   active_pid++;
@@ -72,7 +69,8 @@ u64 task_fork(bool *err) {
   task->next = task_head;
   task_head = task;
 
-  return weird_switch(task, parent);
+  ASSIGN_PTR(pid, weird_switch(task, parent));
+  return ERROR_SUCCESS;
 }
 
 void task_switch(struct task *task) {

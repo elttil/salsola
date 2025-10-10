@@ -25,7 +25,7 @@
 #include "multiboot2.h"
 
 struct multiboot_tag *tags;
-
+u64 bspid_get();
 void kmain2(void) {
   assert(kmalloc_init());
 
@@ -36,7 +36,7 @@ void kmain2(void) {
 
   assert(ps2_keyboard_init());
 
-  // smp_init(tags);
+  smp_init(tags);
   mmu_remove_identity();
 
   assert(task_init());
@@ -54,7 +54,8 @@ void kmain2(void) {
 
   __asm__("sti");
 
-  int pid = task_fork(NULL);
+  u64 pid;
+  assert(ERROR_SUCCESS == task_fork(&pid));
   if (0 == pid) {
     task_exec(C_TO_SV("/init"));
     assert(0);

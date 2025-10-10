@@ -104,6 +104,10 @@ void write_tss(struct GDT_Entry *gdt_entry) {
 
 void flush_tss(void);
 void gdt_init() {
+  // NOTE: TODO: Techinically this does not have to be zeroed and can
+  // actually be used for whatever you want. Maybe do what is suggested
+  // in this article to save some memory and get style points:
+  // https://www.rcollins.org/Productivity/NullDescriptor.html
   gdt_entries[GDT_NULL_SEGMENT].raw = 0x0;
   gdt_entries[GDT_KERNEL_CODE_SEGMENT].raw =
       0xAF9A000000FFFF; // Kernel code segment

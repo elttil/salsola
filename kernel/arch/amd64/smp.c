@@ -191,7 +191,6 @@ void core_main() {
 
 void ap_startup() {
   kprintf("\nap_startup bspid: %d\n", bspid_get());
-  gdt_init();
   mmu_init_for_new_core(core_main);
   for (;;)
     ;

@@ -455,8 +455,8 @@ static u8 ahci_raw_read(volatile struct HBA_PORT *port, u32 startl, u32 starth,
 }
 
 size_t ahci_read(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
-                 int *err) {
-  ASSIGN_ERR(err, ERROR_SUCCESS);
+                 err_t *err) {
+  ASSIGN_PTR(err, ERROR_SUCCESS);
 
   int port = (int)fd->internal_object;
   assert(port == 0);

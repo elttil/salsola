@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <sv.h>
 #include <typedefs.h>
+#include <error.h>
 
 struct tcb {
   u64 rsp;
@@ -20,7 +21,7 @@ struct task {
 } __attribute__((packed));
 
 bool task_init(void);
-u64 task_fork(bool *err);
+err_t task_fork(u64 *pid);
 void task_legacy_switch(void);
 void task_exec(struct sv file);
 #endif // TASK_H
