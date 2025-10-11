@@ -3,3 +3,5 @@
 *.elf
 *.iso
 *.log
+*.img
+sysroot/
