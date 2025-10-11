@@ -27,33 +27,18 @@
 
 // TODO: Move to different file.
 void setup_gs(void) {
-  /*
-   * GS.base (C000_0101h).
-
-   Additionally there is a long mode specific instruction called SWAPGS,
-   which swaps the contents of GS.base and another MSR called
-   KernelGSBase (C000_0102h).*/
   u32 msr_gs_base = 0xC0000101;
-  u32 msr_gs_kernel_base = 0xC0000102;
+  //  u32 msr_gs_kernel_base = 0xC0000102;
 
   void *gs_base = kmalloc(0x100);
   void *gs_kernel_base = kmalloc(0x100);
   assert(gs_base && gs_kernel_base);
 
   msr_set(msr_gs_base, (u64)gs_kernel_base);
-  // msr_set(msr_gs_kernel_base, (u64)gs_base);
 
   __asm__("swapgs\n");
   msr_set(msr_gs_base, (u64)gs_base);
   __asm__("swapgs\n");
-
-  kprintf("user_base: %x\n", msr_get(msr_gs_base));
-  kprintf("Kernl_base: %x\n", msr_get(msr_gs_kernel_base));
-  __asm__("swapgs\n");
-  kprintf("user_base: %x\n", msr_get(msr_gs_base));
-  kprintf("Kernl_base: %x\n", msr_get(msr_gs_kernel_base));
-
-  // msr_set(msr_gs_kernel_base, (u64)gs_kernel_base);
 }
 
 struct multiboot_tag *tags;

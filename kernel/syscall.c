@@ -17,8 +17,8 @@ struct syscall_arguments {
   uint64_t r12;
   uint64_t r13;
   uint64_t r14;
-  uint64_t r15;
   uint64_t rsp;
+  uint64_t r15;
 } __attribute__((packed));
 
 void syscall_handler(struct syscall_arguments *args) {
@@ -35,7 +35,6 @@ void setup_syscall(void);
 u64 set_kernel_stack(void *stack);
 
 void syscall_init(void) {
-  kprintf("set stack to: %x\n", set_kernel_stack((void *)0xffffff8000000000));
+  set_kernel_stack((void *)0xffffff8000000000);
   setup_syscall();
-  //  handler_install(0x80, syscall_handler, 3);
 }
