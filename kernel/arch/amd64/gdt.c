@@ -17,8 +17,8 @@ uint64_t num_gdt_entries = 3 + 2 + 1 + 1;
 #define GDT_NULL_SEGMENT 0x0
 #define GDT_KERNEL_CODE_SEGMENT 0x1
 #define GDT_KERNEL_DATA_SEGMENT 0x2
-#define GDT_USERMODE_CODE_SEGMENT 0x3
-#define GDT_USERMODE_DATA_SEGMENT 0x4
+#define GDT_USERMODE_DATA_SEGMENT 0x3
+#define GDT_USERMODE_CODE_SEGMENT 0x4
 #define GDT_TSS_SEGMENT 0x5
 #define GDT_TSS2_SEGMENT 0x6
 
@@ -99,7 +99,8 @@ void write_tss(struct GDT_Entry *gdt_entry) {
   memset(&tss_entry, 0, sizeof(tss_entry));
   // TODO: This is not required on 64 bit? Why?
   // tss_entry.ss0 = GDT_KERNEL_DATA_SEGMENT * GDT_ENTRY_SIZE;
-  gdt_change_rsp0((u64)get_current_sp());
+  //  gdt_change_rsp0((u64)get_current_sp());
+  gdt_change_rsp0((u64)0xffffff8000000000);
 }
 
 void flush_tss(void);
@@ -113,6 +114,8 @@ void gdt_init() {
       0xAF9A000000FFFF; // Kernel code segment
   gdt_entries[GDT_KERNEL_DATA_SEGMENT].raw =
       0xCF92000000FFFF; // Kernel data segment
+  gdt_entries[GDT_KERNEL_CODE_SEGMENT].s.long_mode = 1;
+  gdt_entries[GDT_KERNEL_DATA_SEGMENT].s.long_mode = 1;
 
   // Usermode code segment
   memcpy(&gdt_entries[GDT_USERMODE_CODE_SEGMENT],

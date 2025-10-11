@@ -14,6 +14,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include <syscall.h>
 #include <task.h>
 
 #include <arch/amd64/apic.h>
@@ -24,6 +25,37 @@
 
 #include "multiboot2.h"
 
+// TODO: Move to different file.
+void setup_gs(void) {
+  /*
+   * GS.base (C000_0101h).
+
+   Additionally there is a long mode specific instruction called SWAPGS,
+   which swaps the contents of GS.base and another MSR called
+   KernelGSBase (C000_0102h).*/
+  u32 msr_gs_base = 0xC0000101;
+  u32 msr_gs_kernel_base = 0xC0000102;
+
+  void *gs_base = kmalloc(0x100);
+  void *gs_kernel_base = kmalloc(0x100);
+  assert(gs_base && gs_kernel_base);
+
+  msr_set(msr_gs_base, (u64)gs_kernel_base);
+  // msr_set(msr_gs_kernel_base, (u64)gs_base);
+
+  __asm__("swapgs\n");
+  msr_set(msr_gs_base, (u64)gs_base);
+  __asm__("swapgs\n");
+
+  kprintf("user_base: %x\n", msr_get(msr_gs_base));
+  kprintf("Kernl_base: %x\n", msr_get(msr_gs_kernel_base));
+  __asm__("swapgs\n");
+  kprintf("user_base: %x\n", msr_get(msr_gs_base));
+  kprintf("Kernl_base: %x\n", msr_get(msr_gs_kernel_base));
+
+  // msr_set(msr_gs_kernel_base, (u64)gs_kernel_base);
+}
+
 struct multiboot_tag *tags;
 u64 bspid_get();
 void kmain2(void) {
@@ -32,17 +64,14 @@ void kmain2(void) {
   assert(msr_is_available());
 
   idt_init();
-  assert(apic_enable());
+  //  assert(apic_enable());
 
   assert(ps2_keyboard_init());
 
-  smp_init(tags);
+  // smp_init(tags);
   mmu_remove_identity();
 
   assert(task_init());
-
-  pit_install();
-  pit_set_count(2);
 
   vfs_add_mount(C_TO_SV("/dev"), ramfs_create());
 
@@ -52,17 +81,21 @@ void kmain2(void) {
 
   vfs_add_mount(C_TO_SV("/"), ext2_create(sda_fd));
 
-  __asm__("sti");
+  setup_gs();
+  syscall_init();
+
+  pit_install();
+  pit_set_count(2);
 
   u64 pid;
   assert(ERROR_SUCCESS == task_fork(&pid));
   if (0 == pid) {
-    task_exec(C_TO_SV("/init"));
+    task_exec(C_TO_SV("/bin/init"));
     assert(0);
   }
-  task_legacy_switch();
-  for (;;)
-    ;
+  for (;;) {
+    task_legacy_switch();
+  }
 }
 
 void kmain(u32 magic, void *arg) {

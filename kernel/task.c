@@ -78,7 +78,6 @@ void task_switch(struct task *task) {
   task_current = task;
 
   mmu_lazy_set_directory(task_current->directory);
-  kprintf("Swithcing to cr3: %x\n", task_current->directory->physical);
   switch_to_task(old, task);
 }
 

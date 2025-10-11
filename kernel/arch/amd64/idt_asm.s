@@ -10,6 +10,99 @@ global set_sbp
 global set_cr3
 global goto_function_with_stack
 
+extern set_kernel_stack
+set_kernel_stack:
+	swapgs
+    mov gs:0x70, rdi
+	mov rax, gs:0x70
+	swapgs
+    ret
+
+extern syscall_handler
+asm_syscall_handler:
+	cli
+
+	swapgs
+	mov gs:0x78, rsp
+	mov rsp, gs:0x70
+
+	mov rax, gs:0x78
+	push rax
+
+;	push 11
+
+	push r15
+	push r14
+	push r13
+	push r12
+	push r11
+	push r10
+	push r9 
+	push r8 
+	push rbp
+;	push rsp
+	push rdi
+	push rsi
+	push rdx
+	push rcx
+	push rbx
+	push rax
+
+	mov rbp, rsp
+	mov rdi, rsp
+	call syscall_handler
+
+	pop rax
+	pop rbx
+	pop rcx
+	pop rdx
+	pop rsi
+	pop rdi
+;	pop rsp
+	pop rbp
+	pop r8 
+	pop r9 
+	pop r10
+	pop r11
+	pop r12
+	pop r13
+	pop r14
+	pop r15
+
+;	pop r11
+
+	pop rsp
+	swapgs
+;	and r11, ~(1<<9)
+;	mov r11, 11
+	o64 sysret
+
+; preserve rbx, rsp, rbp, r12, r13, r14, and r15;
+global setup_syscall
+setup_syscall:
+	;mov rcx, 0xc0000082
+	;wrmsr
+	mov rcx, 0xc0000080
+	rdmsr
+	or eax, 1
+	wrmsr
+
+    ; (0xC0000082) The kernel's RIP SYSCALL entry for 64 bit software
+    mov ecx, 0xC0000082
+    mov rdx, asm_syscall_handler
+    mov eax,edx
+    shr rdx,32
+    wrmsr
+
+	; 32, 48
+
+	mov rcx, 0xc0000081
+	rdmsr
+	mov rdx, 0x00130008
+	wrmsr
+
+    ret
+
 goto_function_with_stack:
 	mov r9, rsp
 	mov r10, rbp
@@ -337,12 +430,7 @@ ISR_NOERRCODE 255
 extern interrupt_dispatch
 global interrupt_stub
 interrupt_stub:
-;	mov rax, 0x1000
-;	mov rbx, 0
-;	mov [rax], rbx
-;	add rsp, 16
-;	iretq
-
+	cli
 	push r15
 	push r14
 	push r13
@@ -381,4 +469,5 @@ interrupt_stub:
 	pop r15
 
 	add rsp, 16
+	sti
 	iretq

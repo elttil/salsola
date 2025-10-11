@@ -80,7 +80,7 @@ void irq_clear_mask(u8 irq_line) {
   if (irq_line >= 8) {
     irq_line -= 8;
   }
-  value = inb(port) & ~(1 << irq_line);
+  value = inb(port) & ~((u8)1 << irq_line);
   outb(port, value);
 }
 
@@ -176,6 +176,8 @@ void eoi(u8 irq) {
 }
 
 void interrupt_dispatch(struct cpu_status *r) {
+  kprintf("LOG INTERUPT RETURN\n");
+
   const interrupt_handler handler = list_of_handlers[r->vector_number];
   if (NULL == handler) {
     kprintf("[NOTE] Interrupt(0x%x) called but has no interrupt handler",
@@ -184,6 +186,31 @@ void interrupt_dispatch(struct cpu_status *r) {
   }
 
   handler(r);
+
+  /*
+  if (0xffffff8000000000 <= r->iret_rip) {
+    r->iret_cs = 0x1 * 8;
+    r->iret_ss = 0x2 * 8;
+  } else {
+    r->iret_cs = 0x3 * 8;
+    r->iret_ss = 0x4 * 8;
+  }
+  */
+
+  kprintf("iret_cs: %x\n", r->iret_cs & (~3));
+  kprintf("iret_ss: %x\n", r->iret_ss & (~3));
+  kprintf("iret_rip: %x\n", r->iret_rip);
+  kprintf("iret_flags: %x\n", r->iret_flags);
+  /*
+  uint64_t iret_rip;
+  uint64_t iret_cs;
+  uint64_t iret_flags;
+  uint64_t iret_rsp;
+  uint64_t iret_ss;
+  */
+  //  kprintf("");
+
+  kprintf("END LOG INTERUPT RETURN\n");
 }
 
 void page_fault(struct cpu_status *r) {
@@ -194,7 +221,7 @@ void page_fault(struct cpu_status *r) {
 }
 
 void handler_install(uint8_t num, interrupt_handler handler, int dpl) {
-  if (num >= 0x20) {
+  if (num >= 0x20 && num <= 0x30) {
     irq_clear_mask(num - 0x20);
   }
   set_idt_entry(num, (void *)isr_list[num], dpl);
