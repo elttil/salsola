@@ -26,13 +26,12 @@ asm_syscall_handler:
 	mov gs:0x78, rsp
 	mov rsp, gs:0x70
 
+	push rax
+
+	mov rax, gs:0x78
+	push rax
+
 	push r15
-
-	mov r15, gs:0x78
-	push r15
-
-;	push 11
-
 	push r14
 	push r13
 	push r12
@@ -47,13 +46,13 @@ asm_syscall_handler:
 	push rdx
 	push rcx
 	push rbx
-	push rax
+;	push rax
 
 	mov rbp, rsp
 	mov rdi, rsp
 	call syscall_handler
 
-	pop rax
+;	pop rax
 	pop rbx
 	pop rcx
 	pop rdx
@@ -68,16 +67,15 @@ asm_syscall_handler:
 	pop r12
 	pop r13
 	pop r14
+	pop r15
 
 ;	pop r11
 
 	pop rsp
 
-	pop r15
+	add rsp, 8 ; Ignore RAX
 
 	swapgs
-;	and r11, ~(1<<9)
-;	mov r11, 11
 	o64 sysret
 
 ; preserve rbx, rsp, rbp, r12, r13, r14, and r15;

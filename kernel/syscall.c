@@ -3,7 +3,6 @@
 #include <syscall.h>
 
 struct syscall_arguments {
-  uint64_t rax;
   uint64_t rbx;
   uint64_t rcx;
   uint64_t rdx;
@@ -17,8 +16,9 @@ struct syscall_arguments {
   uint64_t r12;
   uint64_t r13;
   uint64_t r14;
-  uint64_t rsp;
   uint64_t r15;
+  uint64_t rsp;
+  uint64_t rax;
 } __attribute__((packed));
 
 void syscall_handler(struct syscall_arguments *args) {
