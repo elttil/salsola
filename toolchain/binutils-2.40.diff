@@ -1,0 +1,126 @@
+From 62d64a7bb79d3b2de72c56263448fb39fa3db37e Mon Sep 17 00:00:00 2001
+From: name <test@test.com>
+Date: Mon, 13 Oct 2025 22:06:14 +0200
+Subject: [PATCH] changes
+
+---
+ bfd/config.bfd                      | 9 +++++++++
+ config.sub                          | 2 +-
+ gas/configure.tgt                   | 1 +
+ ld/Makefile.am                      | 2 ++
+ ld/configure.tgt                    | 9 +++++++++
+ ld/emulparams/elf_i386_salsola.sh   | 2 ++
+ ld/emulparams/elf_x86_64_salsola.sh | 1 +
+ 7 files changed, 25 insertions(+), 1 deletion(-)
+ create mode 100644 ld/emulparams/elf_i386_salsola.sh
+ create mode 100644 ld/emulparams/elf_x86_64_salsola.sh
+
+diff --git a/bfd/config.bfd b/bfd/config.bfd
+index 1b0111fd..7138e83c 100644
+--- a/bfd/config.bfd
++++ b/bfd/config.bfd
+@@ -598,12 +598,21 @@ case "${targ}" in
+     targ64_selvecs="x86_64_elf64_sol2_vec x86_64_pe_vec x86_64_pei_vec"
+     want64=true
+     ;;
++  i[3-7]86-*-salsola*)
++    targ_defvec=i386_elf32_vec
++    targ_selvecs=x86_64_elf64_vec
++    ;;
+ #ifdef BFD64
+   x86_64-*-solaris2*)
+     targ_defvec=i386_elf32_sol2_vec
+     targ_selvecs="x86_64_elf64_sol2_vec iamcu_elf32_vec i386_coff_vec i386_pei_vec x86_64_pe_vec x86_64_pei_vec"
+     want64=true
+     ;;
++  x86_64-*-salsola*)
++    targ_defvec=x86_64_elf64_vec
++    targ_selvecs=i386_elf32_vec
++    want64=true
++    ;;
+ #endif
+   i[3-7]86-*-nto*)
+     targ_defvec=i386_elf32_vec
+diff --git a/config.sub b/config.sub
+index dba16e84..6c8ec5bf 100755
+--- a/config.sub
++++ b/config.sub
+@@ -1754,7 +1754,7 @@ case $os in
+ 	     | onefs* | tirtos* | phoenix* | fuchsia* | redox* | bme* \
+ 	     | midnightbsd* | amdhsa* | unleashed* | emscripten* | wasi* \
+ 	     | nsk* | powerunix* | genode* | zvmoe* | qnx* | emx* | zephyr* \
+-	     | fiwix* )
++	     | fiwix* | salsola* )
+ 		;;
+ 	# This one is extra strict with allowed versions
+ 	sco3.2v2 | sco3.2v[4-9]* | sco5v6*)
+diff --git a/gas/configure.tgt b/gas/configure.tgt
+index 765ba736..e5633c43 100644
+--- a/gas/configure.tgt
++++ b/gas/configure.tgt
+@@ -125,6 +125,7 @@ esac
+ generic_target=${cpu_type}-$vendor-$os
+ # Note: This table is alpha-sorted, please try to keep it that way.
+ case ${generic_target} in
++  i386-*-salsola*)			fmt=elf;;
+   aarch64*-*-elf*)			fmt=elf;;
+   aarch64*-*-fuchsia*)			fmt=elf;;
+   aarch64*-*-haiku*)			fmt=elf em=haiku ;;
+diff --git a/ld/Makefile.am b/ld/Makefile.am
+index 12b2c3c4..0c4a149e 100644
+--- a/ld/Makefile.am
++++ b/ld/Makefile.am
+@@ -152,6 +152,7 @@ endif
+ 
+ # These all start with e so 'make clean' can find them.
+ ALL_EMULATION_SOURCES = \
++	eelf_i386_salsola.c \
+ 	eaix5ppc.c \
+ 	eaix5rs6.c \
+ 	eaixppc.c \
+@@ -375,6 +376,7 @@ ALL_EMULATION_SOURCES = \
+ ALL_EMULATIONS = $(ALL_EMULATION_SOURCES:.c=.@OBJEXT@)
+ 
+ ALL_64_EMULATION_SOURCES = \
++	eelf_x86_64_salsola.c \
+ 	eaarch64cloudabi.c \
+ 	eaarch64cloudabib.c \
+ 	eaarch64elf.c \
+diff --git a/ld/configure.tgt b/ld/configure.tgt
+index de04a44b..c2c62f79 100644
+--- a/ld/configure.tgt
++++ b/ld/configure.tgt
+@@ -81,6 +81,15 @@ fi
+ # Please try to keep this table more or less in alphabetic order - it
+ # makes it much easier to lookup a specific archictecture.
+ case "${targ}" in
++i[3-7]86-*-salsola*)
++			targ_emul=elf_i386_salsola
++			targ_extra_emuls=elf_i386
++			targ64_extra_emuls="elf_x86_64_myos elf_x86_64"
++			;;
++x86_64-*-salsola*)
++			targ_emul=elf_x86_64_salsola
++			targ_extra_emuls="elf_i386_salsola elf_x86_64 elf_i386"
++			;;
+ aarch64_be-*-elf)	targ_emul=aarch64elfb
+ 			targ_extra_emuls="aarch64elf aarch64elf32 aarch64elf32b armelfb armelf"
+ 			;;
+diff --git a/ld/emulparams/elf_i386_salsola.sh b/ld/emulparams/elf_i386_salsola.sh
+new file mode 100644
+index 00000000..06482257
+--- /dev/null
++++ b/ld/emulparams/elf_i386_salsola.sh
+@@ -0,0 +1,2 @@
++source_sh ${srcdir}/emulparams/elf_i386.sh
++TEXT_START_ADDR=0x08000000
+diff --git a/ld/emulparams/elf_x86_64_salsola.sh b/ld/emulparams/elf_x86_64_salsola.sh
+new file mode 100644
+index 00000000..59e7df71
+--- /dev/null
++++ b/ld/emulparams/elf_x86_64_salsola.sh
+@@ -0,0 +1 @@
++source_sh ${srcdir}/emulparams/elf_x86_64.sh
+-- 
+2.47.3
+
