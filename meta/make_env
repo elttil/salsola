@@ -1,7 +1,8 @@
-CC=x86_64-elf-gcc
-LD=x86_64-elf-ld
-AS=x86_64-elf-as
-AR=x86_64-elf-ar
+CC=x86_64-salsola-gcc
+LD=x86_64-salsola-ld
+AS=nasm
+AR=x86_64-salsola-ar
 
 INSTALL_DIR=/home/pebkac/prj/salsola/sysroot/bin
-CFLAGS=-ffreestanding -nostdlib
+CFLAGS=-ffreestanding -nostdlib -I../../sysroot/usr/include/
+LDFLAGS=-ffreestanding -nostdlib -L../../sysroot/lib/ -lc

@@ -43,7 +43,7 @@ char *c_files[] = {
 
 #define ARRAY_LEN(array) ((sizeof(array)) / (sizeof(array[0])))
 
-#define CC "x86_64-elf-gcc"
+#define CC "x86_64-salsola-gcc"
 #define AS "nasm"
 
 #define TARGET "salsola"
@@ -64,7 +64,6 @@ char *ld_flags[] = {
     "-shared",
     "-ffreestanding",
     "-nostdlib",
-    "-lgcc",
 };
 
 char *c_flags[] = {

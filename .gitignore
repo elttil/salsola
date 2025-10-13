@@ -4,4 +4,13 @@
 *.iso
 *.log
 *.img
+*.tar.gz*
+*.tar.xz*
+*.sig*
+*.sig*
+toolchain/build-gcc/
+toolchain/build-binutils/
+toolchain/*/
+toolchain/*/
 sysroot/
+kernel/nob
