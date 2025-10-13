@@ -5,10 +5,12 @@ cd ..
 
 source meta/env.sh
 
-$MAKE_CMD -C ./kernel/
+cd kernel/
+./nob
+cd ..
 
-$MAKE_CMD -C ./userland/libc/
-$MAKE_CMD -C ./userland/libc/ install
-
-$MAKE_CMD -C ./userland/init/
-$MAKE_CMD -C ./userland/init/ install
+#$MAKE_CMD -C ./userland/libc/
+#$MAKE_CMD -C ./userland/libc/ install
+#
+#$MAKE_CMD -C ./userland/init/
+#$MAKE_CMD -C ./userland/init/ install
