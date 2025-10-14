@@ -22,7 +22,6 @@ struct vfs_fd *ramfs_open(struct vfs_mount *mount, struct sv file, int flags,
   }
 
   if (!p) {
-    assert(0);
     return NULL;
   }
 

@@ -11,26 +11,43 @@ struct mount_list {
 struct mount_list *mount_head = NULL;
 
 struct vfs_mount *vfs_find_mount(struct sv path) {
+  struct vfs_mount *longest = NULL;
+  size_t max_length = 0;
+
   struct mount_list *p = mount_head;
   for (; p; p = p->next) {
-    if (sv_partial_eq(path, p->mount->path)) {
-      return p->mount;
+    if (!sv_partial_eq(path, p->mount->path)) {
+      continue;
+    }
+    if (sv_length(p->mount->path) > max_length) {
+      max_length = sv_length(p->mount->path);
+      longest = p->mount;
     }
   }
-  return NULL;
+  return longest;
 }
 
-size_t vfs_pread(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
-                 int *err) {
+size_t vfs_pread(struct vfs_fd *fd, void *buffer, size_t length,
+                 size_t offset, err_t *err) {
   assert(fd);
   assert(fd->read);
   return fd->read(fd, buffer, length, offset, err);
 }
 
-size_t vfs_read(struct vfs_fd *fd, void *buffer, size_t length, int *err) {
+size_t vfs_read(struct vfs_fd *fd, void *buffer, size_t length,
+                err_t *err) {
   assert(fd);
   assert(fd->read);
   size_t r = fd->read(fd, buffer, length, fd->offset, err);
+  fd->offset += r;
+  return r;
+}
+
+size_t vfs_write(struct vfs_fd *fd, const void *buffer, size_t length,
+                 err_t *err) {
+  assert(fd);
+  assert(fd->read);
+  size_t r = fd->write(fd, buffer, length, fd->offset, err);
   fd->offset += r;
   return r;
 }
@@ -62,7 +79,7 @@ void vfs_close(struct vfs_fd *fd) {
   kfree(fd);
 }
 
-struct vfs_fd *vfs_open(struct sv file, int flags, int *err) {
+struct vfs_fd *vfs_open(struct sv file, int flags, err_t *err) {
   struct vfs_mount *mount = vfs_find_mount(file);
   assert(mount); // TODO
   assert(mount->open);

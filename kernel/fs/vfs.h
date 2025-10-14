@@ -15,6 +15,8 @@ struct vfs_mount {
 struct vfs_fd {
   size_t (*read)(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
                  err_t *err);
+  size_t (*write)(struct vfs_fd *fd, const void *buffer, size_t length,
+                  size_t offset, err_t *err);
   void *internal_object;
   void (*close)(struct vfs_fd *fd);
 
@@ -24,12 +26,15 @@ struct vfs_fd {
 };
 
 bool vfs_init(void);
-struct vfs_fd *vfs_open(struct sv file, int flags, int *err);
+struct vfs_fd *vfs_open(struct sv file, int flags, err_t *err);
 bool vfs_add_mount(struct sv path, struct vfs_mount *root);
 struct vfs_mount *vfs_find_mount(struct sv path);
-size_t vfs_pread(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
+size_t vfs_pread(struct vfs_fd *fd,  void *buffer, size_t length,
+                 size_t offset, err_t *err);
+size_t vfs_read(struct vfs_fd *fd,  void *buffer, size_t length,
+                err_t *err);
+size_t vfs_write(struct vfs_fd *fd, const void *buffer, size_t length,
                  err_t *err);
-size_t vfs_read(struct vfs_fd *fd, void *buffer, size_t length, err_t *err);
 void vfs_close(struct vfs_fd *fd);
 
 #endif // VFS_H

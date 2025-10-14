@@ -257,8 +257,8 @@ static bool find_inode(struct ext2_ctx *ctx, struct sv file, u32 *inode,
   return true;
 }
 
-size_t ext2_read(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
-                 err_t *err) {
+size_t ext2_read(struct vfs_fd *fd, void *buffer, size_t length,
+                 size_t offset, err_t *err) {
   ASSIGN_PTR(err, ERROR_SUCCESS);
   struct ext2_ctx *ctx = (struct ext2_ctx *)fd->mount->internal_object;
   u32 inode_num = (u32)fd->internal_object;
