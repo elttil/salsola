@@ -452,15 +452,12 @@ bool mmu_allocate_region(void *address, size_t length, int flags) {
 // PDPT index 510 is exlusivley used for the stack which of course
 // is not shared, but instead is copied.
 void mmu_update_stack(void (*function)()) {
-  void *new_stack = (void *)0xffffff8000000000;
+  void *new_stack = (void *)0xffffff8000000000-PAGE_SIZE/*GUARD PAGE*/;
 
   size_t stack_size = 0x8000;
 
-  for (size_t i = 0x1000; i < stack_size; i += PAGE_SIZE) {
-    assert(check_virtual_region_is_free((void *)((uintptr_t)new_stack - i),
-                                        NULL, true, false, NULL,
-                                        MMU_FLAG_RW | MMU_FLAG_PRESENT));
-  }
+  mmu_allocate_region(new_stack - stack_size,
+                      stack_size, MMU_FLAG_RW | MMU_FLAG_PRESENT);
 
   goto_function_with_stack(function, new_stack);
 }

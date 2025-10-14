@@ -35,6 +35,6 @@ void setup_syscall(void);
 u64 set_kernel_stack(void *stack);
 
 void syscall_init(void) {
-  set_kernel_stack((void *)0xffffff8000000000);
+  set_kernel_stack((void *)0xffffff8000000000 - 0x1000/*Guard page*/);
   setup_syscall();
 }
