@@ -3,8 +3,11 @@
 #include <elf.h>
 #include <kmalloc.h>
 #include <kprintf.h>
+#include <log.h>
 #include <stddef.h>
 #include <task.h>
+
+DEFINE_LIST_FUNCTIONS(list_fd, struct vfs_fd *)
 
 struct task *task_head = NULL;
 struct task *task_current = NULL;
@@ -17,6 +20,7 @@ bool task_init(void) {
   }
   task_head->next = NULL;
   task_head->pid = active_pid;
+  list_fd_init(&task_head->fds);
   active_pid++;
 
   task_head->directory = mmu_get_active_directory();
@@ -24,6 +28,37 @@ bool task_init(void) {
   task_current = task_head;
 
   return true;
+}
+
+err_t task_fd_open(u64 *fd, struct sv path, int flags) {
+  err_t err;
+  struct vfs_fd *fd_ptr = vfs_open(path, flags, &err);
+  if (!fd_ptr) {
+    return err;
+  }
+
+  if (!list_fd_add(&task_current->fds, fd_ptr, fd)) {
+    return ERROR_NO_MEMORY;
+  }
+
+  return ERROR_SUCCESS;
+}
+
+err_t task_fd_write(int fd, const void *buffer, u64 count, u64 *out) {
+  struct vfs_fd *fd_ptr;
+  list_fd_get(&task_current->fds, fd, &fd_ptr);
+  if (!fd_ptr) {
+    return ERROR_INVALID_FD;
+  }
+  err_t err;
+  u64 r = vfs_write(fd_ptr, buffer, count, &err);
+  ASSIGN_PTR(out, r);
+  return err;
+}
+
+void task_fd_close(u64 fd) {
+  (void)fd;
+  klog(LOG_NOTE, "TODO: Task_close");
 }
 
 struct PML4T {
@@ -38,6 +73,14 @@ void task_create_directory(struct task *task, struct task *parent) {
 
 void jump_usermode(void(*ring3_function), void *stack);
 
+void *task_sbrk(u64 increment) {
+  uintptr_t a = (uintptr_t)task_current->program_stop;
+  mmu_allocate_region((void *)a, increment, MMU_FLAG_RW | MMU_FLAG_USER);
+
+  task_current->program_stop = (void *)(a + align_up(increment, PAGE_SIZE));
+  return (void *)a;
+}
+
 void task_exec(struct sv file) {
   // TODO: Deallocate userland
   void *program_end;
@@ -46,10 +89,15 @@ void task_exec(struct sv file) {
     return;
   }
 
-  size_t stack_length = 0x2000;
+  uintptr_t stack_diff = PAGE_SIZE * 10;
+  uintptr_t stack_length = 0x5000;
   void *stack_ptr = (void *)((uintptr_t)program_end +
-                             /*GUARD PAGE*/ PAGE_SIZE * 2 + stack_length);
-  mmu_allocate_region(stack_ptr, stack_length, MMU_FLAG_RW | MMU_FLAG_USER);
+                             /*GUARD PAGE*/ stack_diff + stack_length);
+  stack_ptr = align_up(stack_ptr, PAGE_SIZE);
+  task_current->program_stop = stack_ptr;
+  task_current->program_stop += PAGE_SIZE; // Guard page
+  mmu_allocate_region(stack_ptr - stack_length, stack_length,
+                      MMU_FLAG_RW | MMU_FLAG_USER);
 
   jump_usermode(entry, (void *)stack_ptr);
   assert(0);
@@ -65,6 +113,7 @@ err_t task_fork(u64 *pid) {
   }
   task->pid = active_pid;
   active_pid++;
+  list_fd_init(&task->fds);
 
   task->next = task_head;
   task_head = task;

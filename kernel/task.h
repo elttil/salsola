@@ -1,10 +1,14 @@
 #ifndef TASK_H
 #define TASK_H
+#include <error.h>
+#include <fs/vfs.h>
+#include <list.h>
 #include <mmu.h>
 #include <stdbool.h>
 #include <sv.h>
 #include <typedefs.h>
-#include <error.h>
+
+DEFINE_LIST_STRUCT(list_fd, struct vfs_fd *)
 
 struct tcb {
   u64 rsp;
@@ -16,12 +20,18 @@ struct task {
   // NOTE: Assembly code depends upon the TCB being at the start
   struct tcb tcb;
   u64 pid;
+  void *program_stop;
+  struct list_fd_ctx fds;
   struct mmu_directory *directory;
   struct task *next;
-} __attribute__((packed));
+};
 
 bool task_init(void);
 err_t task_fork(u64 *pid);
 void task_legacy_switch(void);
 void task_exec(struct sv file);
+err_t task_fd_open(u64 *fd, struct sv path, int flags);
+err_t task_fd_write(int fd, const void *buffer, u64 count, u64 *out);
+void task_fd_close(u64 fd);
+void *task_sbrk(uintptr_t increment);
 #endif // TASK_H
