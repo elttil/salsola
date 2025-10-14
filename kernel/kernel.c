@@ -61,6 +61,7 @@ void kmain2(void) {
   vfs_add_mount(C_TO_SV("/dev"), ramfs_create());
 
   ahci_init();
+  serial_add_file();
 
   struct vfs_fd *sda_fd = vfs_open(C_TO_SV("/dev/sda"), 0, NULL);
 

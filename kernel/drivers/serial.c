@@ -1,5 +1,10 @@
+#include <assert.h>
 #include <drivers/serial.h>
+#include <fs/ramfs.h>
+#include <fs/vfs.h>
 #include <io.h>
+#include <stddef.h>
+#include <sv.h>
 
 #define PORT 0x3f8 // COM1
 
@@ -28,6 +33,44 @@ int serial_init(void) {
 
 static int is_transmit_empty() {
   return inb(PORT + 5) & 0x20;
+}
+
+void serial_print_string(const char *str, size_t length) {
+  for (size_t i = 0; i < length; i++) {
+    for (; 0 == is_transmit_empty();)
+      ;
+
+    outb(PORT, str[i]);
+  }
+}
+
+size_t serial_write(struct vfs_fd *fd, const void *buffer, size_t length,
+                    size_t offset, err_t *err) {
+  (void)fd;
+  (void)buffer;
+  (void)length;
+  (void)offset;
+  serial_print_string(buffer, length);
+  ASSIGN_PTR(err, ERROR_SUCCESS);
+  return length;
+}
+
+bool serial_open(struct vfs_fd *fd, struct sv file, int flags,
+                 void *internal_object, int *err) {
+  (void)fd;
+  (void)file;
+  (void)flags;
+  (void)err;
+  (void)internal_object;
+  fd->write = serial_write;
+  return true;
+}
+
+bool serial_add_file() {
+  struct vfs_mount *mount = vfs_find_mount(C_TO_SV("/dev"));
+  assert(mount);
+  assert(ramfs_add_file(mount, C_TO_SV("/dev/serial"), serial_open, NULL, NULL));
+  return true;
 }
 
 void serial_print_char(char a) {
