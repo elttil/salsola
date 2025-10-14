@@ -1,6 +1,13 @@
 #include <arch/amd64/idt.h>
+#include <assert.h>
+#include <error.h>
 #include <kprintf.h>
+#include <mmu.h>
+#include <stddef.h>
+#include <sv.h>
 #include <syscall.h>
+#include <syscalls.h>
+#include <task.h>
 
 struct syscall_arguments {
   uint64_t rbx;
@@ -18,23 +25,64 @@ struct syscall_arguments {
   uint64_t r14;
   uint64_t r15;
   uint64_t rsp;
-  uint64_t rax;
 } __attribute__((packed));
 
-void syscall_handler(struct syscall_arguments *args) {
-  kprintf("Syscall rax: %x\n", args->rax);
-  kprintf("Syscall rbx: %x\n", args->rbx);
-  kprintf("Syscall rcx: %x\n", args->rcx);
-  kprintf("Syscall rdx: %x\n", args->rdx);
-  kprintf("Syscall rsp: %x\n", args->rsp);
-  kprintf("Syscall r15: %x\n", args->r15);
-  kprintf("Syscall r11: %x\n", args->r11);
+err_t open(u64 *user_fd, char *str, size_t length, int flags) {
+  struct sv file;
+  TRY(mmu_get_user_sv(str, length, &file));
+
+  u64 tmp_fd;
+  TRY(task_fd_open(&tmp_fd, file, flags));
+
+  err_t rc;
+  if (ERROR_SUCCESS !=
+      (rc = mmu_assign_user_ptr(user_fd, &tmp_fd, sizeof(int)))) {
+    task_fd_close(tmp_fd);
+    return rc;
+  }
+
+  return ERROR_SUCCESS;
+}
+
+void close(int fd) {
+  task_fd_close(fd);
+}
+
+err_t write(int fd, const void *buffer, u64 count, u64 *out) {
+  TRY(mmu_verify_user_pointer(buffer, count));
+  TRY(mmu_verify_user_pointer(out, sizeof(u64)));
+  return task_fd_write(fd, buffer, count, out);
+}
+
+u64 syscall_handler(const struct syscall_arguments *regs) {
+  u64 syscall = regs->rdi;
+  const u64 args[] = {
+      regs->rsi, regs->rdx, regs->rbx, regs->r8, regs->r9,
+  };
+  switch (syscall) {
+  case SYS_OPEN:
+    return open((u64 *)args[0], (char *)args[1], (size_t)args[2], (int)args[3]);
+  case SYS_CLOSE:
+    close(args[0]);
+    return ERROR_SUCCESS;
+  case SYS_WRITE:
+    return write(args[0], (const void *)args[1], args[2], (u64 *)args[3]);
+  case SYS_SBRK:
+    return (u64)task_sbrk(args[0]);
+  case SYS_RANDOMFILL:
+    kprintf("TODO: Randomfill\n");
+    return 0;
+  default:
+    assert(0);
+    break;
+  };
+  return 0;
 }
 
 void setup_syscall(void);
 u64 set_kernel_stack(void *stack);
 
 void syscall_init(void) {
-  set_kernel_stack((void *)0xffffff8000000000 - 0x1000/*Guard page*/);
+  set_kernel_stack((void *)0xffffff8000000000 - 0x1000 /*Guard page*/);
   setup_syscall();
 }
