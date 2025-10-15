@@ -135,12 +135,17 @@ int create_iso_file(void) {
     return 1;
   }
   Nob_Cmd cmd = {0};
-  nob_cmd_append(&cmd, "cp", TARGET ".elf", "isodir/boot");
+  nob_cmd_append(&cmd, "mv", TARGET ".elf", "isodir/boot");
   if (!nob_cmd_run(&cmd)) {
     return 0;
   }
 
   nob_cmd_append(&cmd, "grub-mkrescue", "-o", TARGET ".iso", "isodir");
+  if (!nob_cmd_run(&cmd)) {
+    return 0;
+  }
+
+  nob_cmd_append(&cmd, "ln", "isodir/boot/" TARGET ".elf", TARGET ".elf");
   if (!nob_cmd_run(&cmd)) {
     return 0;
   }
