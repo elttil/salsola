@@ -26,8 +26,6 @@ asm_syscall_handler:
 	mov gs:0x78, rsp
 	mov rsp, gs:0x70
 
-	push rax
-
 	mov rax, gs:0x78
 	push rax
 
@@ -40,25 +38,21 @@ asm_syscall_handler:
 	push r9 
 	push r8 
 	push rbp
-;	push rsp
 	push rdi
 	push rsi
 	push rdx
 	push rcx
 	push rbx
-;	push rax
 
 	mov rbp, rsp
 	mov rdi, rsp
 	call syscall_handler
 
-;	pop rax
 	pop rbx
 	pop rcx
 	pop rdx
 	pop rsi
 	pop rdi
-;	pop rsp
 	pop rbp
 	pop r8 
 	pop r9 
@@ -69,11 +63,7 @@ asm_syscall_handler:
 	pop r14
 	pop r15
 
-;	pop r11
-
 	pop rsp
-
-	add rsp, 8 ; Ignore RAX
 
 	swapgs
 	o64 sysret
@@ -441,7 +431,6 @@ interrupt_stub:
 	push r9 
 	push r8 
 	push rbp
-;	push rsp
 	push rdi
 	push rsi
 	push rdx
@@ -458,7 +447,6 @@ interrupt_stub:
 	pop rdx
 	pop rsi
 	pop rdi
-;	pop rsp
 	pop rbp
 	pop r8 
 	pop r9 

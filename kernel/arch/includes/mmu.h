@@ -1,7 +1,10 @@
 #ifndef MMU_H
 #define MMU_H
+#include <error.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <sv.h>
+#include <typedefs.h>
 
 #define MMU_FLAG_PRESENT (1 << 0)
 #define MMU_FLAG_RW (1 << 1)
@@ -38,4 +41,7 @@ void mmu_remove_identity(void);
 void mmu_init_for_new_core(void (*main)(void));
 bool mmu_allocate_region(void *address, size_t length, int flags);
 void mmu_lazy_set_directory(struct mmu_directory *directory);
+err_t mmu_get_user_sv(char *string, size_t length, struct sv *s);
+err_t mmu_assign_user_ptr(void *dst, const void *src, size_t size);
+err_t mmu_verify_user_pointer(const void *ptr, u64 length);
 #endif // MMU_H

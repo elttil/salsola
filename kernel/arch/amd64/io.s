@@ -55,6 +55,11 @@ flush_tss:
 	ltr ax
 	ret
 
+global swapgs
+swapgs:
+	swapgs
+	ret
+
 global set_stack_and_jump
 set_stack_and_jump:
 	mov rsp, rdi

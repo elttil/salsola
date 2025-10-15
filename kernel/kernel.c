@@ -25,6 +25,7 @@
 
 #include "multiboot2.h"
 
+void swapgs(void);
 // TODO: Move to different file.
 void setup_gs(void) {
   u32 msr_gs_base = 0xC0000101;
@@ -36,9 +37,9 @@ void setup_gs(void) {
 
   msr_set(msr_gs_base, (u64)gs_kernel_base);
 
-  __asm__("swapgs\n");
+  swapgs();
   msr_set(msr_gs_base, (u64)gs_base);
-  __asm__("swapgs\n");
+  swapgs();
 }
 
 struct multiboot_tag *tags;

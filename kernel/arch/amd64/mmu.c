@@ -7,6 +7,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include <sv.h>
 
 bool active_bootstrap = true;
 
@@ -56,6 +57,25 @@ uint64_t pow(uint64_t a, uint64_t b) {
     r *= a;
   }
   return r;
+}
+
+err_t mmu_get_user_sv(char *string, size_t length, struct sv *s) {
+  // TODO: Validate the string
+  PTR_ASSIGN(s, sv_init(string, length));
+  return ERROR_SUCCESS;
+}
+
+err_t mmu_assign_user_ptr(void *dst, const void *src, size_t size) {
+  // TODO: Validate user pointer
+  memcpy(dst, src, size);
+  return ERROR_SUCCESS;
+}
+
+err_t mmu_verify_user_pointer(const void *ptr, u64 length) {
+  (void)ptr;
+  (void)length;
+  // TODO: Validate user pointer
+  return ERROR_SUCCESS;
 }
 
 struct mmu_directory orig_active_directory;
@@ -452,12 +472,20 @@ bool mmu_allocate_region(void *address, size_t length, int flags) {
 // PDPT index 510 is exlusivley used for the stack which of course
 // is not shared, but instead is copied.
 void mmu_update_stack(void (*function)()) {
-  void *new_stack = (void *)0xffffff8000000000-PAGE_SIZE/*GUARD PAGE*/;
+  void *new_stack = (void *)0xffffff8000000000-0x1000/*Guard page*/;
 
   size_t stack_size = 0x8000;
 
-  mmu_allocate_region(new_stack - stack_size,
-                      stack_size, MMU_FLAG_RW | MMU_FLAG_PRESENT);
+  mmu_allocate_region(new_stack - stack_size, stack_size,
+                      MMU_FLAG_RW | MMU_FLAG_PRESENT);
+
+  /*
+  for (size_t i = 0x1000; i < stack_size; i += PAGE_SIZE) {
+    assert(check_virtual_region_is_free((void *)((uintptr_t)new_stack - i),
+                                        NULL, true, false, NULL,
+                                        MMU_FLAG_RW | MMU_FLAG_PRESENT));
+  }
+  */
 
   goto_function_with_stack(function, new_stack);
 }
