@@ -44,7 +44,7 @@ err_t task_fd_open(u64 *fd, struct sv path, int flags) {
   return ERROR_SUCCESS;
 }
 
-err_t task_fd_write(int fd, const void *buffer, u64 count, u64 *out) {
+err_t task_fd_write(u64 fd, const void *buffer, u64 count, u64 *out) {
   struct vfs_fd *fd_ptr;
   list_fd_get(&task_current->fds, fd, &fd_ptr);
   if (!fd_ptr) {
