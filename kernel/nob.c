@@ -18,6 +18,7 @@ char *c_files[] = {
     "prng.c",
     "arch/amd64/idt.c",
     "drivers/ps2_keyboard.c",
+    "drivers/framebuffer.c",
     "ringbuffer.c",
     "drivers/pci.c",
     "drivers/ahci.c",
