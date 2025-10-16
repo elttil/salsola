@@ -27,7 +27,7 @@ struct syscall_arguments {
   uint64_t rsp;
 } __attribute__((packed));
 
-err_t open(u64 *user_fd, char *str, size_t length, int flags) {
+err_t syscall_open(u64 *user_fd, char *str, size_t length, int flags) {
   struct sv file;
   TRY(mmu_get_user_sv(str, length, &file));
 
@@ -44,17 +44,17 @@ err_t open(u64 *user_fd, char *str, size_t length, int flags) {
   return ERROR_SUCCESS;
 }
 
-void close(int fd) {
+void syscall_close(int fd) {
   task_fd_close(fd);
 }
 
-err_t write(u64 fd, const void *buffer, u64 count, u64 *out) {
+err_t syscall_write(u64 fd, const void *buffer, u64 count, u64 *out) {
   TRY(mmu_verify_user_pointer(buffer, count));
   TRY(mmu_verify_user_pointer(out, sizeof(u64)));
   return task_fd_write(fd, buffer, count, out);
 }
 
-err_t read(u64 fd, void *buffer, u64 count, u64 *out) {
+err_t syscall_read(u64 fd, void *buffer, u64 count, u64 *out) {
   TRY(mmu_verify_user_pointer(buffer, count));
   TRY(mmu_verify_user_pointer(out, sizeof(u64)));
   return task_fd_read(fd, buffer, count, out);
@@ -67,14 +67,16 @@ u64 syscall_handler(const struct syscall_arguments *regs) {
   };
   switch (syscall) {
   case SYS_OPEN:
-    return open((u64 *)args[0], (char *)args[1], (size_t)args[2], (int)args[3]);
+    return syscall_open((u64 *)args[0], (char *)args[1], (size_t)args[2],
+                        (int)args[3]);
   case SYS_CLOSE:
-    close(args[0]);
+    syscall_close(args[0]);
     return ERROR_SUCCESS;
   case SYS_READ:
-    return read(args[0], (void *)args[1], args[2], (u64 *)args[3]);
+    return syscall_read(args[0], (void *)args[1], args[2], (u64 *)args[3]);
   case SYS_WRITE:
-    return write(args[0], (const void *)args[1], args[2], (u64 *)args[3]);
+    return syscall_write(args[0], (const void *)args[1], args[2],
+                         (u64 *)args[3]);
   case SYS_SBRK:
     return (u64)task_sbrk(args[0]);
   case SYS_RANDOMFILL:
