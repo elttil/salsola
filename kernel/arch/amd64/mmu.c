@@ -720,6 +720,11 @@ int mmu_init(void *multiboot_header) {
   set_frame(&PML4T, true);
 
   ksbrk(0x0);
+  // FIXME: Shitty hack
+  for (size_t i = 0; i < 10; i++) {
+    allocate_next_pt(heap_end + 0x1000 * 1024 * i,
+                     MMU_FLAG_PRESENT | MMU_FLAG_RW);
+  }
 
   flush_tlb();
   return 1;
