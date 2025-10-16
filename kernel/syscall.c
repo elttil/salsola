@@ -48,10 +48,16 @@ void close(int fd) {
   task_fd_close(fd);
 }
 
-err_t write(int fd, const void *buffer, u64 count, u64 *out) {
+err_t write(u64 fd, const void *buffer, u64 count, u64 *out) {
   TRY(mmu_verify_user_pointer(buffer, count));
   TRY(mmu_verify_user_pointer(out, sizeof(u64)));
   return task_fd_write(fd, buffer, count, out);
+}
+
+err_t read(u64 fd, void *buffer, u64 count, u64 *out) {
+  TRY(mmu_verify_user_pointer(buffer, count));
+  TRY(mmu_verify_user_pointer(out, sizeof(u64)));
+  return task_fd_read(fd, buffer, count, out);
 }
 
 u64 syscall_handler(const struct syscall_arguments *regs) {
@@ -65,6 +71,8 @@ u64 syscall_handler(const struct syscall_arguments *regs) {
   case SYS_CLOSE:
     close(args[0]);
     return ERROR_SUCCESS;
+  case SYS_READ:
+    return read(args[0], (void *)args[1], args[2], (u64 *)args[3]);
   case SYS_WRITE:
     return write(args[0], (const void *)args[1], args[2], (u64 *)args[3]);
   case SYS_SBRK:

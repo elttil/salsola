@@ -32,6 +32,7 @@ void task_legacy_switch(void);
 void task_exec(struct sv file);
 err_t task_fd_open(u64 *fd, struct sv path, int flags);
 err_t task_fd_write(u64 fd, const void *buffer, u64 count, u64 *out);
+err_t task_fd_read(u64 fd, void *buffer, u64 count, u64 *out);
 void task_fd_close(u64 fd);
 void *task_sbrk(uintptr_t increment);
 #endif // TASK_H
