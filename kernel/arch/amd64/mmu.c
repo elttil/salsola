@@ -472,7 +472,7 @@ bool mmu_allocate_region(void *address, size_t length, int flags) {
 // PDPT index 510 is exlusivley used for the stack which of course
 // is not shared, but instead is copied.
 void mmu_update_stack(void (*function)()) {
-  void *new_stack = (void *)0xffffff8000000000-0x1000/*Guard page*/;
+  void *new_stack = (void *)0xffffff8000000000 - 0x1000 /*Guard page*/;
 
   size_t stack_size = 0x8000;
 
@@ -633,7 +633,7 @@ void mmu_init_for_new_core(void (*main)(void)) {
 
   mmu_set_directory(new_directory);
 
-  void *new_stack = (void *)0xffffff8000000000;
+  void *new_stack = (void *)0xffffff8000000000 - 0x1000 /*GUARD PAGE*/;
   set_stack_and_jump(new_stack, main);
 }
 
