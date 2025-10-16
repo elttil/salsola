@@ -106,13 +106,8 @@ void enable_core(int core) {
   volatile u32 *ptr = (u32 *)((uintptr_t)&trampoline_cr3 + 0xFFFFFF8000000000);
 
   *ptr = cr3;
-  kprintf("*ptr: %x\n", *ptr);
-  kprintf("cr3: %x\n", cr3);
-  //  for (;;)
-  //    ;
 
   int i = core;
-  kprintf("bspid: %d\n", bspid);
   // do not start BSP, that's already running this code
   // #if 0
   if (core == bspid) { // FIXME: Incorrect
@@ -163,7 +158,6 @@ bool rsdt_find_signature(struct RSDT *rsdt, char *signature, void **out) {
     void *virtual = mmu_map_frames((void *)rsdt->PointerToOtherSDT[i],
                                    sizeof(struct ACPISDTHeader));
     struct ACPISDTHeader *h = (struct ACPISDTHeader *)virtual;
-    kprintf("Signature: %.*s\n", 4, h->Signature);
     if (!strncmp(h->Signature, signature, length)) {
       PTR_ASSIGN(out, h);
       return true;
@@ -201,44 +195,30 @@ void smp_init(struct multiboot_tag *tags) {
        tag = (struct multiboot_tag *)((multiboot_uint8_t *)tag +
                                       ((tag->size + 7) & ~7))) {
     if (tag->type != MULTIBOOT_TAG_TYPE_ACPI_OLD) {
-      kprintf("tag->type: %d\n", tag->type);
       continue;
     }
 
     struct multiboot_tag_old_acpi *m = (struct multiboot_tag_old_acpi *)tag;
-    kprintf("m->type: %d\n", m->type);
-    kprintf("m->size: %d\n", m->size);
     assert(m->size >= sizeof(struct RSDP_t));
     struct RSDP_t *rsdp = (struct RSDP_t *)m->rsdp;
-    kprintf("Signature: %.*s\n", 8, rsdp->Signature);
-    kprintf("Revision: %d\n", rsdp->Revision);
 
     assert(rsdp_checksum((void *)rsdp, sizeof(*rsdp)));
 
     void *mapped_frames =
         mmu_map_frames((void *)rsdp->RsdtAddress, sizeof(struct ACPISDTHeader));
-    kprintf("%x\n", mapped_frames);
-    kprintf("%x\n", rsdp->RsdtAddress);
 
     struct RSDT *header = (struct RSDT *)mapped_frames;
-    kprintf("Header Signature: %.*s\n", 4, header->h.Signature);
     // TODO: Make sure this check does not pass page boundaries(the
     // length could be corrupted)
     assert(rsdp_checksum((void *)header, header->h.Length));
-    kprintf("After checksum\n");
 
     struct MADT *madt;
     assert(rsdt_find_signature(header, "APIC", (void **)&madt));
-    kprintf("MADT Signature: %.*s\n", 4, madt->h.Signature);
-    kprintf("Local APIC: %p\n", madt->local_apic_address);
-    // lapic_ptr
     lapic_ptr = mmu_map_frames((void *)madt->local_apic_address, 0x1000);
 
     for (struct madt_entry *p = madt->entries;
          ((uintptr_t)p - (uintptr_t)madt) < madt->h.Length;) {
-      kprintf("entry_type: %x\n", p->entry_type);
       if (0 == p->entry_type) {
-        kprintf("id: %x\n", p->local_apic.apic_processor_id);
         enable_core(p->local_apic.apic_processor_id);
       }
 

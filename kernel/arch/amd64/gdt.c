@@ -1,6 +1,5 @@
 // TODO: Clean this up. Right now I just want it to work.
 #include <arch/amd64/gdt.h>
-#include <kprintf.h>
 #include <mmu.h>
 #include <stdint.h>
 #include <string.h>
@@ -65,7 +64,6 @@ struct GDTR gdtr;
 void load_gdt(void *gdtr);
 
 void gdt_change_rsp0(u64 rsp0) {
-  kprintf("rsp0: %x\n", rsp0);
   tss_entry.rsp[0] = rsp0;
 }
 

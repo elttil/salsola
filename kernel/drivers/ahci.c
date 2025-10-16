@@ -499,8 +499,6 @@ bool ahci_open(struct vfs_fd *fd, struct sv file, int flags,
   (void)err;
   fd->internal_object = internal_object;
   fd->read = ahci_read;
-  kprintf("TEST OPEN\n");
-  kprintf("Internal object: %p\n", internal_object);
   return true;
 }
 
@@ -516,9 +514,6 @@ bool ahci_init(void) {
   if (!pci_devices_by_id(0x01, 0x06, &device)) {
     return false;
   }
-  kprintf("vendor: %x\n", device.vendor);
-  kprintf("device: %x\n", device.device);
-  kprintf("header_type: %x\n", device.header_type);
 
   struct pci_base_address_register bar;
   pci_get_bar(&device, 5, &bar);
