@@ -87,12 +87,24 @@ char *c_flags[] = {
     "-I../include/",
 };
 
+int format_c_file(char *file, Nob_Procs *procs) {
+  Nob_Cmd cmd = {0};
+  nob_cmd_append(&cmd, "clang-format", "-i", file);
+  if (!nob_cmd_run(&cmd, .async = procs)) {
+    return 1;
+  }
+  return 0;
+}
+
 int build_c_file(char *file, char *object_output, Nob_Procs *procs) {
   int rebuild_is_needed = nob_needs_rebuild1(object_output, file);
   assert(rebuild_is_needed >= 0);
   if (!rebuild_is_needed) {
     return 0;
   }
+
+  format_c_file(file, procs);
+
   Nob_Cmd cmd = {0};
   nob_cmd_append(&cmd, CC, "-o", object_output, "-c", file);
   nob_da_append_many(&cmd, c_flags, ARRAY_LEN(c_flags));
