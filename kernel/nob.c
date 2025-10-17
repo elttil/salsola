@@ -4,10 +4,11 @@
 char *asm_files[] = {
     "arch/amd64/lock.s", "arch/amd64/smp_asm.s",     "arch/amd64/idt_asm.s",
     "arch/amd64/io.s",   "arch/amd64/boot.s",        "arch/amd64/msr.s",
-    "arch/amd64/regs.s", "arch/amd64/task_switch.s",
+    "arch/amd64/regs.s", "arch/amd64/task_switch.s", "arch/amd64/smap_asm.s",
 };
 
 char *c_files[] = {
+    "arch/amd64/smap.c",
     "arch/amd64/hwrng.c",
     "arch/amd64/mmu.c",
     "assert.c",
