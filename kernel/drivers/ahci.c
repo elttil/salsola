@@ -520,10 +520,7 @@ size_t ahci_read(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
   if (length % 512 != 0) {
     sector_count++;
   }
-  // FIXME: There is something wrong with the stack for large
-  // allocations.
-  // u8 tmp_buffer[512 * num_prdt];
-  u8 *tmp_buffer = kmalloc(512 * num_prdt);
+  u8 tmp_buffer[512 * num_prdt];
   for (; sector_count >= num_prdt; lba++) {
     ahci_raw_read(&hba->ports[port], lba, 0, num_prdt, (u16 *)tmp_buffer);
     memcpy(buffer, tmp_buffer + offset, 512 * num_prdt);
@@ -532,7 +529,6 @@ size_t ahci_read(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
     length -= num_prdt * 512;
     sector_count -= num_prdt;
   }
-  kfree(tmp_buffer);
 
   if (sector_count > 0) {
     ahci_raw_read(&hba->ports[port], lba, 0, sector_count, (u16 *)tmp_buffer);
