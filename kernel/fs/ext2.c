@@ -6,6 +6,7 @@
 #include <log.h>
 #include <stdbool.h>
 #include <string.h>
+#include <sys/types.h>
 
 #define SECTOR_SIZE 512
 
@@ -261,6 +262,28 @@ size_t ext2_read(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
   return read_inode(ctx, inode_num, buffer, length, offset, NULL);
 }
 
+err_t ext2_lseek(struct vfs_fd *fd, off_t offset, int whence, off_t *out) {
+  off_t ret_offset = fd->offset;
+  switch (whence) {
+  case SEEK_SET:
+    ret_offset = offset;
+    break;
+  case SEEK_CUR:
+    ret_offset += offset;
+    break;
+  case SEEK_END:
+    // TODO: Get file size and put that.
+    return ERROR_INVALID_WHENCE;
+    break;
+  default:
+    return ERROR_INVALID_WHENCE;
+    break;
+  }
+  fd->offset = ret_offset;
+  ASSIGN_PTR(out, ret_offset);
+  return ERROR_SUCCESS;
+}
+
 struct vfs_fd *ext2_open(struct vfs_mount *mount, struct sv file, int flags,
                          err_t *err) {
   (void)flags;
@@ -272,7 +295,7 @@ struct vfs_fd *ext2_open(struct vfs_mount *mount, struct sv file, int flags,
     return NULL;
   }
 
-  struct vfs_fd *fd = kmalloc(sizeof(struct vfs_fd));
+  struct vfs_fd *fd = kcalloc(1, sizeof(struct vfs_fd));
   if (!fd) {
     ASSIGN_PTR(err, ERROR_NO_MEMORY);
     return NULL;
@@ -280,6 +303,9 @@ struct vfs_fd *ext2_open(struct vfs_mount *mount, struct sv file, int flags,
   fd->close = NULL;
   fd->offset = 0;
   fd->read = ext2_read;
+  fd->write = NULL;
+  fd->lseek = ext2_lseek;
+  fd->type = VFS_TYPE_FILE;
   fd->internal_object = (void *)inode_num;
 
   //  assert(p->open);

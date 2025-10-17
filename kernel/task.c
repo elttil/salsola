@@ -68,6 +68,15 @@ err_t task_fd_write(u64 fd, const void *buffer, u64 count, u64 *out) {
   return err;
 }
 
+err_t task_lseek(u64 fd, off_t offset, int whence, off_t *out) {
+  struct vfs_fd *fd_ptr;
+  list_fd_get(&task_current->fds, fd, &fd_ptr);
+  if (!fd_ptr) {
+    return ERROR_INVALID_FD;
+  }
+  return vfs_lseek(fd_ptr, offset, whence, out);
+}
+
 void task_fd_close(u64 fd) {
   (void)fd;
   klog(LOG_NOTE, "TODO: Task_close");

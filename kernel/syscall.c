@@ -6,6 +6,7 @@
 #include <mmu.h>
 #include <stddef.h>
 #include <sv.h>
+#include <sys/types.h>
 #include <syscall.h>
 #include <syscalls.h>
 #include <task.h>
@@ -89,6 +90,8 @@ u64 syscall_handler(const struct syscall_arguments *regs) {
     return (u64)task_sbrk(args[0]);
   case SYS_RANDOMFILL:
     return syscall_randomfill((void *)args[0], args[1]);
+  case SYS_LSEEK:
+    return task_lseek(args[0], args[1], args[2], (off_t *)args[3]);
   default:
     assert(0);
     break;

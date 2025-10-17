@@ -6,6 +6,7 @@
 #include <mmu.h>
 #include <stdbool.h>
 #include <sv.h>
+#include <sys/types.h>
 #include <typedefs.h>
 
 DEFINE_LIST_STRUCT(list_fd, struct vfs_fd *)
@@ -35,4 +36,5 @@ err_t task_fd_write(u64 fd, const void *buffer, u64 count, u64 *out);
 err_t task_fd_read(u64 fd, void *buffer, u64 count, u64 *out);
 void task_fd_close(u64 fd);
 void *task_sbrk(uintptr_t increment);
+err_t task_lseek(u64 fd, off_t offset, int whence, off_t *out);
 #endif // TASK_H

@@ -4,3 +4,4 @@
 #define SYS_READ 3
 #define SYS_SBRK 4
 #define SYS_RANDOMFILL 5
+#define SYS_LSEEK 6

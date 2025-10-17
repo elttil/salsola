@@ -27,17 +27,22 @@ struct vfs_mount *vfs_find_mount(struct sv path) {
   return longest;
 }
 
-size_t vfs_pread(struct vfs_fd *fd, void *buffer, size_t length,
-                 size_t offset, err_t *err) {
+size_t vfs_pread(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
+                 err_t *err) {
   assert(fd);
   assert(fd->read);
   return fd->read(fd, buffer, length, offset, err);
 }
 
-size_t vfs_read(struct vfs_fd *fd, void *buffer, size_t length,
-                err_t *err) {
-  assert(fd);
-  assert(fd->read);
+size_t vfs_read(struct vfs_fd *fd, void *buffer, size_t length, err_t *err) {
+  if (!fd) {
+    ASSIGN_PTR(err, ERROR_INVALID_FD);
+    return 0;
+  }
+  if (!fd->read) {
+    ASSIGN_PTR(err, ERROR_FD_HAS_NO_READ);
+    return 0;
+  }
   size_t r = fd->read(fd, buffer, length, fd->offset, err);
   fd->offset += r;
   return r;
@@ -45,11 +50,27 @@ size_t vfs_read(struct vfs_fd *fd, void *buffer, size_t length,
 
 size_t vfs_write(struct vfs_fd *fd, const void *buffer, size_t length,
                  err_t *err) {
-  assert(fd);
-  assert(fd->read);
+  if (!fd) {
+    ASSIGN_PTR(err, ERROR_INVALID_FD);
+    return 0;
+  }
+  if (!fd->write) {
+    ASSIGN_PTR(err, ERROR_FD_HAS_NO_WRITE);
+    return 0;
+  }
   size_t r = fd->write(fd, buffer, length, fd->offset, err);
   fd->offset += r;
   return r;
+}
+
+err_t vfs_lseek(struct vfs_fd *fd, off_t offset, int whence, off_t *out) {
+  if (!fd) {
+    return ERROR_INVALID_FD;
+  }
+  if (!fd->lseek) {
+    return ERROR_FD_HAS_NO_LSEEK;
+  }
+  return fd->lseek(fd, offset, whence, out);
 }
 
 bool vfs_add_mount(struct sv path, struct vfs_mount *root) {
