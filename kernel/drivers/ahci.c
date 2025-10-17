@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <drivers/ahci.h>
 #include <drivers/pci.h>
 #include <error.h>
 #include <fs/ramfs.h>
@@ -442,16 +443,65 @@ static u8 ahci_perform_command(volatile struct HBA_PORT *port, u32 startl,
   return 1;
 }
 
-/*
 static u8 ahci_raw_write(volatile struct HBA_PORT *port, u32 startl, u32 starth,
                          u32 count, u16 *inbuffer) {
   return ahci_perform_command(port, startl, starth, count, inbuffer, 1);
 }
-*/
 
 static u8 ahci_raw_read(volatile struct HBA_PORT *port, u32 startl, u32 starth,
                         u32 count, u16 *outbuffer) {
   return ahci_perform_command(port, startl, starth, count, outbuffer, 0);
+}
+
+size_t ahci_write(struct vfs_fd *fd, const void *buffer, size_t length,
+                  size_t offset, err_t *err) {
+  ASSIGN_PTR(err, ERROR_SUCCESS);
+  int port = (int)fd->internal_object;
+  assert(port == 0);
+  u32 lba = offset / 512;
+  offset %= 512;
+  const int rc = length;
+
+  u32 sector_count = length / 512;
+  if (length % 512 != 0) {
+    sector_count++;
+  }
+
+  if (offset > 0) {
+    u8 tmp_buffer[512];
+    ahci_raw_read(&hba->ports[port], lba, 0, 1, (u16 *)tmp_buffer);
+
+    int left = 512 - offset;
+    int write = min((u64)left, length);
+
+    memcpy(tmp_buffer + offset, buffer, write);
+    ahci_raw_write(&hba->ports[port], lba, 0, 1, (u16 *)tmp_buffer);
+
+    offset = 0;
+    length -= write;
+    sector_count--;
+    lba++;
+  }
+
+  for (; sector_count >= num_prdt; lba++) {
+    ahci_raw_write(&hba->ports[port], lba, 0, num_prdt, (u16 *)buffer);
+    buffer += num_prdt * 512;
+    length -= num_prdt * 512;
+    sector_count -= num_prdt;
+  }
+
+  if (sector_count > 0 && (0 == length % SECTOR_SIZE)) {
+    ahci_raw_write(&hba->ports[port], lba, 0, sector_count, (u16 *)buffer);
+    return rc;
+  }
+
+  if (sector_count > 0 && length > 0) {
+    u8 tmp_buffer[512 * sector_count];
+    ahci_raw_read(&hba->ports[port], lba, 0, sector_count, (u16 *)tmp_buffer);
+    memcpy(tmp_buffer + offset, buffer, length);
+    ahci_raw_write(&hba->ports[port], lba, 0, sector_count, (u16 *)tmp_buffer);
+  }
+  return rc;
 }
 
 size_t ahci_read(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
@@ -498,7 +548,9 @@ bool ahci_open(struct vfs_fd *fd, struct sv file, int flags,
   (void)flags;
   (void)err;
   fd->internal_object = internal_object;
+  fd->type = VFS_TYPE_BLOCK_DEVICE;
   fd->read = ahci_read;
+  fd->write = ahci_write;
   return true;
 }
 
