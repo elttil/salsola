@@ -88,23 +88,32 @@ char *c_flags[] = {
     "-I../include/",
 };
 
-int format_c_file(char *file, Nob_Procs *procs) {
+int format_files(Nob_File_Paths *files, Nob_Procs *procs) {
+  if (0 == files->count) {
+    return 1;
+  }
   Nob_Cmd cmd = {0};
-  nob_cmd_append(&cmd, "clang-format", "-i", file);
+  nob_cmd_append(&cmd, "clang-format", "-i");
+  nob_da_append_many(&cmd, files->items, files->count);
   if (!nob_cmd_run(&cmd, .async = procs)) {
     return 1;
   }
   return 0;
 }
 
-int build_c_file(char *file, char *object_output, Nob_Procs *procs) {
+int build_c_file(char *file, char *object_output, Nob_Procs *procs,
+                 int *did_rebuild) {
   int rebuild_is_needed = nob_needs_rebuild1(object_output, file);
   assert(rebuild_is_needed >= 0);
   if (!rebuild_is_needed) {
+    if (did_rebuild) {
+      *did_rebuild = 0;
+    }
     return 0;
   }
-
-  format_c_file(file, procs);
+  if (did_rebuild) {
+    *did_rebuild = 1;
+  }
 
   Nob_Cmd cmd = {0};
   nob_cmd_append(&cmd, CC, "-o", object_output, "-c", file);
@@ -208,12 +217,17 @@ int main(int argc, char **argv) {
   nob_da_append_many(&cmd, c_flags, ARRAY_LEN(c_flags));
 
   Nob_File_Paths objects = {0};
+  Nob_File_Paths changed_files = {0};
 
   Nob_Procs procs = {0};
   for (int i = 0; i < ARRAY_LEN(c_files); i++) {
     char *object_output = code_file_to_obj(c_files[i]);
-    assert(0 == build_c_file(c_files[i], object_output, &procs));
+    int did_rebuild;
+    assert(0 == build_c_file(c_files[i], object_output, &procs, &did_rebuild));
     nob_da_append(&objects, object_output);
+    if (did_rebuild) {
+      nob_da_append(&changed_files, c_files[i]);
+    }
   }
   for (int i = 0; i < ARRAY_LEN(asm_files); i++) {
     char *object_output = code_file_to_obj(asm_files[i]);
@@ -222,14 +236,17 @@ int main(int argc, char **argv) {
   }
   nob_procs_wait(procs);
 
+  format_files(&changed_files, &procs);
+
   int rebuild_is_needed =
       nob_needs_rebuild(TARGET ".elf", objects.items, objects.count);
   if (rebuild_is_needed) {
     nob_da_append_many(&cmd, objects.items, objects.count);
-    if (!nob_cmd_run(&cmd)) {
+    if (!nob_cmd_run(&cmd, .async = &procs)) {
       return 1;
     }
   }
+  nob_procs_wait(procs);
 
   if (!create_iso_file()) {
     return 1;
