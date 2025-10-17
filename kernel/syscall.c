@@ -1,5 +1,6 @@
 #include <arch/amd64/idt.h>
 #include <assert.h>
+#include <csprng.h>
 #include <error.h>
 #include <kprintf.h>
 #include <mmu.h>
@@ -60,6 +61,13 @@ err_t syscall_read(u64 fd, void *buffer, u64 count, u64 *out) {
   return task_fd_read(fd, buffer, count, out);
 }
 
+err_t syscall_randomfill(void *buffer, uint32_t size) {
+  // TODO: Crash the process upon error.
+  TRY(mmu_verify_user_pointer(buffer, size));
+  csprng_get_random(buffer, size);
+  return ERROR_SUCCESS;
+}
+
 u64 syscall_handler(const struct syscall_arguments *regs) {
   u64 syscall = regs->rdi;
   const u64 args[] = {
@@ -80,8 +88,7 @@ u64 syscall_handler(const struct syscall_arguments *regs) {
   case SYS_SBRK:
     return (u64)task_sbrk(args[0]);
   case SYS_RANDOMFILL:
-    kprintf("TODO: Randomfill\n");
-    return 0;
+    return syscall_randomfill((void *)args[0], args[1]);
   default:
     assert(0);
     break;
