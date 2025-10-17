@@ -39,7 +39,7 @@ void mix_chacha(void) {
   internal_chacha_block[COUNT] = 0;
 }
 
-void csprng_get_random(u8 *buffer, u64 len) {
+void csprng_get_random(void *buffer, u64 len) {
   u8 rand_data[BLOCK_SIZE];
   for (; len > 0;) {
     if (COUNT_MAX - 1 == internal_chacha_block[COUNT]) {
@@ -96,7 +96,7 @@ static inline uint64_t xorshift64(void) {
   return entropy_fast_state = x;
 }
 
-void csprng_add_entropy(u8 *buffer, u64 size) {
+void csprng_add_entropy(void *buffer, u64 size) {
   SHA1_Update(&hash_pool, &entropy_fast_state, sizeof(entropy_fast_state));
   xorshift64();
   SHA1_Update(&hash_pool, buffer, size);
@@ -106,9 +106,9 @@ void csprng_add_entropy(u8 *buffer, u64 size) {
   }
 }
 
-void csprng_add_entropy_fast(u8 *buffer, u64 size) {
+void csprng_add_entropy_fast(void *buffer, u64 size) {
   for (u64 i = 0; i < size; i++) {
-    entropy_fast_state ^= ((u64)buffer[i] << (8 * (i % 8)));
+    entropy_fast_state ^= ((u64)((u8 *)buffer)[i] << (8 * (i % 8)));
     if (0 == i % 8) {
       xorshift64();
     }
