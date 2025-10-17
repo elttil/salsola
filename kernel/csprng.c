@@ -3,6 +3,8 @@
 #include <crypto/ChaCha20/chacha20.h>
 #include <crypto/SHA1/sha1.h>
 #include <csprng.h>
+#include <fs/ramfs.h>
+#include <fs/vfs.h>
 #include <hwrng.h>
 #include <stddef.h>
 #include <string.h>
@@ -97,7 +99,7 @@ static inline uint64_t xorshift64(void) {
   return entropy_fast_state = x;
 }
 
-void csprng_add_entropy(void *buffer, u64 size) {
+void csprng_add_entropy(const void *buffer, u64 size) {
   SHA1_Update(&hash_pool, &entropy_fast_state, sizeof(entropy_fast_state));
   xorshift64();
   SHA1_Update(&hash_pool, buffer, size);
@@ -105,6 +107,46 @@ void csprng_add_entropy(void *buffer, u64 size) {
   if (hash_pool_size >= HASH_LEN * 2) {
     add_hash_pool();
   }
+}
+
+size_t random_write(struct vfs_fd *fd, const void *buffer, size_t length,
+                    size_t offset, err_t *err) {
+  (void)fd;
+  (void)offset;
+  ASSIGN_PTR(err, ERROR_SUCCESS);
+  csprng_add_entropy(buffer, length);
+  add_hash_pool();
+  return length;
+}
+
+size_t random_read(struct vfs_fd *fd, void *buffer, size_t length,
+                   size_t offset, err_t *err) {
+  (void)fd;
+  (void)offset;
+  ASSIGN_PTR(err, ERROR_SUCCESS);
+  csprng_get_random(buffer, length);
+  return length;
+}
+
+bool random_open(struct vfs_fd *fd, struct sv file, int flags,
+                 void *internal_object, int *err) {
+  (void)fd;
+  (void)file;
+  (void)flags;
+  (void)internal_object;
+  (void)err;
+  fd->type = VFS_TYPE_CHAR_DEVICE;
+  fd->read = random_read;
+  fd->write = random_write;
+  return true;
+}
+
+bool csprng_add_random_device(struct sv filename) {
+  struct vfs_mount *mount = vfs_find_mount(C_TO_SV("/dev"));
+  if (!mount) {
+    return false;
+  }
+  return ramfs_add_file(mount, filename, random_open, NULL, NULL);
 }
 
 void csprng_add_entropy_fast(void *buffer, u64 size) {

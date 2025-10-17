@@ -69,6 +69,9 @@ void kmain2(void) {
 
   vfs_add_mount(C_TO_SV("/"), ext2_create(sda_fd));
 
+  csprng_add_random_device(C_TO_SV("/dev/random"));
+  csprng_add_random_device(C_TO_SV("/dev/urandom"));
+
   setup_gs();
   syscall_init();
 
