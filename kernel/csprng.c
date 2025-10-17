@@ -3,6 +3,7 @@
 #include <crypto/ChaCha20/chacha20.h>
 #include <crypto/SHA1/sha1.h>
 #include <csprng.h>
+#include <hwrng.h>
 #include <stddef.h>
 #include <string.h>
 
@@ -118,5 +119,12 @@ void csprng_add_entropy_fast(void *buffer, u64 size) {
 
 void csprng_init(void) {
   SHA1_Init(&hash_pool);
+
+  u64 seed;
+  if (!hwrng_get(&seed)) {
+    return;
+  }
+  csprng_add_entropy(&seed, sizeof(seed));
+  add_hash_pool();
   return;
 }

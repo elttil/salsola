@@ -60,6 +60,23 @@ swapgs:
 	swapgs
 	ret
 
+global rdrand
+rdrand:
+	cmp rdi, 0
+	jz .invalid
+
+	rdrand rax
+	; If RDRAND did not return a random number let the caller retry.
+	jnc .invalid
+
+	mov [rdi], rax
+	mov rax, 1
+	ret
+
+.invalid:
+	mov rax, 0
+	ret
+
 global set_stack_and_jump
 set_stack_and_jump:
 	mov rsp, rdi

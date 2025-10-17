@@ -22,6 +22,7 @@
 #include <arch/amd64/idt.h>
 #include <arch/amd64/msr.h>
 #include <arch/amd64/smp.h>
+#include <hwrng.h>
 
 #include "multiboot2.h"
 
@@ -91,6 +92,9 @@ void kmain(u32 magic, void *arg) {
     return;
   }
 
+  if (!hwrng_init()) {
+    klog(LOG_WARN, "HWRNG Failed to initalize");
+  }
   csprng_init();
   prng_init();
 

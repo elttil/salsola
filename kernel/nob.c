@@ -8,6 +8,7 @@ char *asm_files[] = {
 };
 
 char *c_files[] = {
+    "arch/amd64/hwrng.c",
     "arch/amd64/mmu.c",
     "assert.c",
     "kmalloc.c",
