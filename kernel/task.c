@@ -108,12 +108,22 @@ void task_create_directory(struct task *task, struct task *parent) {
 
 void jump_usermode(void(*ring3_function), void *stack);
 
-void *task_sbrk(u64 increment) {
-  uintptr_t a = (uintptr_t)task_current->program_stop;
-  mmu_allocate_region((void *)a, increment, MMU_FLAG_RW | MMU_FLAG_USER);
-
-  task_current->program_stop = (void *)(a + align_up(increment, PAGE_SIZE));
-  return (void *)a;
+err_t task_mmap(void *addr, size_t length, int prot, int flags, int fd,
+                off_t offset, void **out) {
+  // TODO: Handle prot
+  (void)prot;
+  (void)offset;
+  if (flags & MAP_ANONYMOUS) {
+    err_t rc = mmu_allocate_random_region(addr, length, true,
+                                          MMU_FLAG_RW | MMU_FLAG_USER, out);
+    if (ERROR_SUCCESS == rc) {
+      memset(out, 0, length);
+    }
+    return rc;
+  }
+  // TODO: File backed mmaps
+  (void)fd;
+  return ERROR_MMAP_NOT_SUPPORTED;
 }
 
 void task_exec(struct sv file) {

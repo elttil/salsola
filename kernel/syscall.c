@@ -46,8 +46,8 @@ err_t syscall_open(u64 *user_fd, char *str, size_t length, int flags) {
   return ERROR_SUCCESS;
 }
 
-void syscall_close(int fd) {
-  task_fd_close(fd);
+err_t syscall_close(int fd) {
+  return task_fd_close(fd);
 }
 
 err_t syscall_write(u64 fd, const void *buffer, u64 count, u64 *out) {
@@ -69,25 +69,32 @@ err_t syscall_randomfill(void *buffer, uint32_t size) {
   return ERROR_SUCCESS;
 }
 
+err_t syscall_mmap(void *addr, size_t length, int prot, int flags, int fd,
+                   off_t offset, void **out) {
+  // NOTE: task_mmap has to ensure that addr can not be used in a
+  // malicious way to allocate within the kernel region.
+  TRY(mmu_verify_user_pointer(out, sizeof(void *)));
+  return task_mmap(addr, length, prot, flags, fd, offset, out);
+}
+
 u64 syscall_handler(const struct syscall_arguments *regs) {
   u64 syscall = regs->rdi;
-  const u64 args[] = {
-      regs->rsi, regs->rdx, regs->rbx, regs->r8, regs->r9,
-  };
+  const u64 args[7] = {regs->rsi, regs->rdx, regs->rbx, regs->r8,
+                       regs->r9,  regs->r10, regs->r12};
   switch (syscall) {
   case SYS_OPEN:
     return syscall_open((u64 *)args[0], (char *)args[1], (size_t)args[2],
                         (int)args[3]);
   case SYS_CLOSE:
-    syscall_close(args[0]);
-    return ERROR_SUCCESS;
+    return syscall_close(args[0]);
   case SYS_READ:
     return syscall_read(args[0], (void *)args[1], args[2], (u64 *)args[3]);
   case SYS_WRITE:
     return syscall_write(args[0], (const void *)args[1], args[2],
                          (u64 *)args[3]);
-  case SYS_SBRK:
-    return (u64)task_sbrk(args[0]);
+  case SYS_MMAP:
+    return syscall_mmap((void *)args[0], args[1], args[2], args[3], args[4],
+                        args[5], (void **)args[6]);
   case SYS_RANDOMFILL:
     return syscall_randomfill((void *)args[0], args[1]);
   case SYS_LSEEK:

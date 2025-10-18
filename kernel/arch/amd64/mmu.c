@@ -1,5 +1,6 @@
 #include <arch/amd64/smp.h>
 #include <assert.h>
+#include <csprng.h>
 #include <mmu.h>
 #include <multiboot2.h>
 #include <prng.h>
@@ -133,17 +134,19 @@ void allocate_next_pt(void *address, u32 flags);
 
 void *heap_end;
 
+bool mmu_is_region_free(void *address, size_t length) {
+  for (size_t i = 0; i < length; i += PAGE_SIZE) {
+    void *ptr = (void *)((uintptr_t)address + i);
+    if (!check_virtual_region_is_free(ptr, NULL, false, false, NULL, 0)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 void *mmu_find_free_virtual_region(size_t length) {
   for (size_t offset = 0;; offset += PAGE_SIZE) {
-    bool is_free = true;
-    for (size_t i = 0; i < length; i += PAGE_SIZE) {
-      void *address = (void *)((uintptr_t)heap_end + offset + i);
-      if (!check_virtual_region_is_free(address, NULL, false, false, NULL, 0)) {
-        is_free = false;
-        break;
-      }
-    }
-    if (is_free) {
+    if (mmu_is_region_free((void *)((uintptr_t)heap_end + offset), length)) {
       return (void *)((uintptr_t)heap_end + offset);
     }
   }
@@ -197,6 +200,37 @@ void mmu_unmap_frames(void *src, size_t length) {
   // FIXME: Possibly expensive operation that may be best to avoid
   // if unmap_frames is called multiple times.
   flush_tlb();
+}
+
+err_t mmu_allocate_random_region(void *address, size_t length,
+                                 bool is_userspace, int flags, void **out) {
+  // TODO: Use the address as a suggestion as to where the region should
+  // be placed, for the NULL case the mapping will be truly random.
+  // Maybe this should even be moved to a different function?
+  (void)address;
+  for (;;) {
+    u64 address;
+    if (is_userspace) {
+      const u64 kernel_region_start = 0xF000000000;
+      address = csprng_get_uniform(kernel_region_start);
+      assert(!(address >= kernel_region_start));
+    } else {
+      // TODO:
+      assert(0);
+    }
+
+    address &= ~(0xFFF);
+
+    if (!mmu_is_region_free((void *)address, length)) {
+      continue;
+    }
+
+    mmu_allocate_region((void *)address, length, flags);
+
+    ASSIGN_PTR(out, (void *)address);
+
+    return ERROR_SUCCESS;
+  }
 }
 
 // FIXME: WARNING: The allocation is not guaranteed to be linear in the

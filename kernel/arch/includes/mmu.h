@@ -44,4 +44,6 @@ void mmu_lazy_set_directory(struct mmu_directory *directory);
 err_t mmu_get_user_sv(char *string, size_t length, struct sv *s);
 err_t mmu_assign_user_ptr(void *dst, const void *src, size_t size);
 err_t mmu_verify_user_pointer(const void *ptr, u64 length);
+err_t mmu_allocate_random_region(void *address, size_t length, bool is_userspace, int flags,
+                                 void **out);
 #endif // MMU_H
