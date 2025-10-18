@@ -69,7 +69,8 @@ bool serial_open(struct vfs_fd *fd, struct sv file, int flags,
 bool serial_add_file() {
   struct vfs_mount *mount = vfs_find_mount(C_TO_SV("/dev"));
   assert(mount);
-  assert(ramfs_add_file(mount, C_TO_SV("/dev/serial"), serial_open, NULL, NULL));
+  assert(
+      ramfs_add_file(mount, C_TO_SV("/dev/serial"), serial_open, NULL, NULL));
   return true;
 }
 

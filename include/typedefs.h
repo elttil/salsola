@@ -2,6 +2,9 @@
 #define TYPEDEFS_H
 #include <stdint.h>
 
+#define unlikely(expr) __builtin_expect(!!(expr), 0)
+#define likely(expr) __builtin_expect(!!(expr), 1)
+
 #define PTR_ASSIGN(ptr, value)                                                 \
   if ((ptr)) {                                                                   \
     *(ptr) = (value);                                                          \

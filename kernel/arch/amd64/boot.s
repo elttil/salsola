@@ -176,7 +176,6 @@ Realm64:
     mov gs, ax
     mov ss, ax
 
-
 	pop rdi
 	pop rsi
 	call kmain

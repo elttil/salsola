@@ -186,9 +186,27 @@ void interrupt_dispatch(struct cpu_status *r) {
   handler(r);
 }
 
+struct stackframe {
+  struct stackframe *rbp;
+  u64 rip;
+};
+
+void *get_current_sbp(void);
+void dump_backtrace(u32 max_frames) {
+  struct stackframe *stk = (void *)get_current_sbp();
+  kprintf("Stack trace:\n");
+  for (u32 frame = 0; stk && frame < max_frames; ++frame) {
+    kprintf("addr2line -e kernel/salsola.elf 0x%x\n", stk->rip);
+    stk = stk->rbp;
+  }
+}
+
 void page_fault(struct cpu_status *r) {
   (void)r;
   kprintf("Page fault\n");
+  kprintf("CR2: %x\n", cr2_get());
+  kprintf("IP: %x\n", r->iret_rip);
+  dump_backtrace(12);
   for (;;)
     ;
 }

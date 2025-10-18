@@ -1,3 +1,4 @@
+#include <arch/amd64/idt.h>
 #include <arch/amd64/smp.h>
 #include <arch/amd64/task_switch.h>
 #include <assert.h>
@@ -229,6 +230,7 @@ static struct task *task_next(struct task *task) {
 }
 
 void task_legacy_switch(void) {
+  interrupts_disable();
   struct task *new_task = task_next(get_current_task());
   if (new_task == get_current_task()) {
     return;

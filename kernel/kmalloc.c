@@ -174,7 +174,7 @@ int merge_headers(MallocHeader *b) {
 
 #ifdef KMALLOC_DEBUG
 void *int_kmalloc(size_t s) {
-  disable_interrupts();
+  interrupts_disable();
   u8 *rc = kmalloc_align(s, NULL);
   prng_get_pseudorandom(rc, s);
   rc += align_page(s);

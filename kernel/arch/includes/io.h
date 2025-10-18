@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <typedefs.h>
 
 extern void outsw(u16, u32);
@@ -8,6 +9,10 @@ extern void outl(u16, u32);
 extern u32 inl(u16);
 extern u16 inw(u16);
 extern u16 inb(u16);
+
+bool rdrand(u64 *output);
+
+u64 cr2_get(void);
 
 extern void rep_outsw(u16 count, u16 port, volatile void *addy);
 __attribute__((no_caller_saved_registers)) extern void

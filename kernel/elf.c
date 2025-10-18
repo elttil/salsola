@@ -20,12 +20,10 @@ void *elf_load_file(struct sv file, void **ds) {
     return NULL;
   }
 
-  kprintf("test\n");
   if (0 != memcmp(header.e_ident, "\x7F\x45\x4C\x46" /* "\x7FELF" */, 4)) {
     vfs_close(fd);
     return NULL;
   }
-  kprintf("after\n");
 
   Elf64_Phdr program_header;
   assert(sizeof(program_header) == header.e_phentsize);
@@ -64,8 +62,6 @@ void *elf_load_file(struct sv file, void **ds) {
       end_of_code = e;
     }
 
-    kprintf("first p_vaddr: %x\n", program_header.p_vaddr);
-    kprintf("second p_vaddr: %x\n", p_vaddr);
     memset((void *)program_header.p_vaddr, 0, program_header.p_memsz);
 
     // 2. Copy p_filesz bytes from p_offset to p_vaddr

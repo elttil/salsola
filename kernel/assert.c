@@ -1,13 +1,13 @@
+#include <arch/amd64/idt.h>
 #include <assert.h>
 #include <kprintf.h>
 
-__attribute__((__noreturn__)) void aFailed(char *f, int l) {
-  __asm__("cli");
+void dump_backtrace(u32 max_frames);
+void aFailed(char *f, int l) {
+  interrupts_disable();
   kprintf("Assert failed\n");
   kprintf("%s : %d\n", f, l);
+  dump_backtrace(10);
   for (;;)
     ;
-  //  dump_backtrace(10);
-  //  halt();
-  //  kprintf("after halt?\n");
 }

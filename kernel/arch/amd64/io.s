@@ -49,6 +49,11 @@ inb:
 	in al, dx
 	ret
 
+global cr2_get
+cr2_get:
+	mov rax, cr2
+	ret
+
 global flush_tss
 flush_tss:
 	mov ax, 40

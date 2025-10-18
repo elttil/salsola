@@ -98,7 +98,7 @@ void write_tss(struct GDT_Entry *gdt_entry) {
   // TODO: This is not required on 64 bit? Why?
   // tss_entry.ss0 = GDT_KERNEL_DATA_SEGMENT * GDT_ENTRY_SIZE;
   //  gdt_change_rsp0((u64)get_current_sp());
-  gdt_change_rsp0((u64)0xffffff8000000000 - 0x1000/*Guard page*/);
+  gdt_change_rsp0((u64)0xffffff8000000000 - 0x1000 /*Guard page*/);
 }
 
 void flush_tss(void);
