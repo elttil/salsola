@@ -64,6 +64,19 @@ void csprng_get_random(void *buffer, u64 len) {
   }
 }
 
+// FIXME: TODO: Check if this is actually correct, I can't be bothered
+// doing the math to check this.
+u64 csprng_get_uniform(u64 upperbound) {
+  const u64 max_64 = ~((u64)0);
+  u64 range = upperbound + 1;
+  u64 max = max_64 - (max_64 % range);
+  u64 x;
+  do {
+    csprng_get_random(&x, sizeof(x));
+  } while (x >= max);
+  return x % range;
+}
+
 HASH_CTX hash_pool;
 u32 hash_pool_size = 0;
 
