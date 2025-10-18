@@ -11,14 +11,6 @@
 
 bool active_bootstrap = true;
 
-struct kernel_thread {
-  struct mmu_directory *active_directory;
-};
-
-#define MAX_CORES 64
-// FIXME: Limited to 64 cores
-struct kernel_thread kernel_threads[MAX_CORES];
-
 void flush_tlb(void);
 
 #define PAGE_FLAG_PRESENT (1 << 0)

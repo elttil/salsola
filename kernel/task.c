@@ -1,3 +1,4 @@
+#include <arch/amd64/smp.h>
 #include <arch/amd64/task_switch.h>
 #include <assert.h>
 #include <elf.h>
@@ -5,13 +6,21 @@
 #include <kprintf.h>
 #include <log.h>
 #include <stddef.h>
+#include <sys/mman.h>
 #include <task.h>
 
 DEFINE_LIST_FUNCTIONS(list_fd, struct vfs_fd *)
 
 struct task *task_head = NULL;
-struct task *task_current = NULL;
 u64 active_pid = 0;
+
+static void set_current_task(struct task *task) {
+  kernel_threads[core_id_get()].current_task = task;
+}
+
+static struct task *get_current_task(void) {
+  return kernel_threads[core_id_get()].current_task;
+}
 
 bool task_init(void) {
   task_head = kmalloc(sizeof(struct task));
@@ -25,7 +34,7 @@ bool task_init(void) {
 
   task_head->directory = mmu_get_active_directory();
 
-  task_current = task_head;
+  set_current_task(task_head);
 
   return true;
 }
@@ -37,7 +46,7 @@ err_t task_fd_open(u64 *fd, struct sv path, int flags) {
     return err;
   }
 
-  if (!list_fd_add(&task_current->fds, fd_ptr, fd)) {
+  if (!list_fd_add(&get_current_task()->fds, fd_ptr, fd)) {
     return ERROR_NO_MEMORY;
   }
 
@@ -46,7 +55,7 @@ err_t task_fd_open(u64 *fd, struct sv path, int flags) {
 
 err_t task_fd_read(u64 fd, void *buffer, u64 count, u64 *out) {
   struct vfs_fd *fd_ptr;
-  list_fd_get(&task_current->fds, fd, &fd_ptr);
+  list_fd_get(&get_current_task()->fds, fd, &fd_ptr);
   if (!fd_ptr) {
     return ERROR_INVALID_FD;
   }
@@ -58,7 +67,7 @@ err_t task_fd_read(u64 fd, void *buffer, u64 count, u64 *out) {
 
 err_t task_fd_write(u64 fd, const void *buffer, u64 count, u64 *out) {
   struct vfs_fd *fd_ptr;
-  list_fd_get(&task_current->fds, fd, &fd_ptr);
+  list_fd_get(&get_current_task()->fds, fd, &fd_ptr);
   if (!fd_ptr) {
     return ERROR_INVALID_FD;
   }
@@ -70,16 +79,21 @@ err_t task_fd_write(u64 fd, const void *buffer, u64 count, u64 *out) {
 
 err_t task_lseek(u64 fd, off_t offset, int whence, off_t *out) {
   struct vfs_fd *fd_ptr;
-  list_fd_get(&task_current->fds, fd, &fd_ptr);
+  list_fd_get(&get_current_task()->fds, fd, &fd_ptr);
   if (!fd_ptr) {
     return ERROR_INVALID_FD;
   }
   return vfs_lseek(fd_ptr, offset, whence, out);
 }
 
-void task_fd_close(u64 fd) {
-  (void)fd;
-  klog(LOG_NOTE, "TODO: Task_close");
+err_t task_fd_close(u64 fd) {
+  struct vfs_fd *fd_ptr;
+  list_fd_get(&get_current_task()->fds, fd, &fd_ptr);
+  if (!fd_ptr) {
+    return ERROR_INVALID_FD;
+  }
+  vfs_close(fd_ptr);
+  return ERROR_SUCCESS;
 }
 
 struct PML4T {
@@ -115,8 +129,8 @@ void task_exec(struct sv file) {
   void *stack_ptr = (void *)((uintptr_t)program_end +
                              /*GUARD PAGE*/ stack_diff + stack_length);
   stack_ptr = align_up(stack_ptr, PAGE_SIZE);
-  task_current->program_stop = stack_ptr;
-  task_current->program_stop += PAGE_SIZE; // Guard page
+  get_current_task()->program_stop = stack_ptr;
+  get_current_task()->program_stop += PAGE_SIZE; // Guard page
   mmu_allocate_region(stack_ptr - stack_length, stack_length,
                       MMU_FLAG_RW | MMU_FLAG_USER);
 
@@ -125,7 +139,7 @@ void task_exec(struct sv file) {
 }
 
 err_t task_fork(u64 *pid) {
-  struct task *parent = task_current;
+  struct task *parent = get_current_task();
   assert(parent);
 
   struct task *task = kmalloc(sizeof(struct task));
@@ -144,10 +158,10 @@ err_t task_fork(u64 *pid) {
 }
 
 void task_switch(struct task *task) {
-  struct task *old = task_current;
-  task_current = task;
+  struct task *old = get_current_task();
+  set_current_task(task);
 
-  mmu_lazy_set_directory(task_current->directory);
+  mmu_lazy_set_directory(get_current_task()->directory);
   switch_to_task(old, task);
 }
 
@@ -160,8 +174,8 @@ static struct task *task_next(struct task *task) {
 }
 
 void task_legacy_switch(void) {
-  struct task *new_task = task_next(task_current);
-  if (new_task == task_current) {
+  struct task *new_task = task_next(get_current_task());
+  if (new_task == get_current_task()) {
     return;
   }
   task_switch(new_task);

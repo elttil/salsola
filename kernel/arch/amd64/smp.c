@@ -11,6 +11,9 @@
 
 lock_t smp_lock;
 
+// FIXME: Limited to 64 cores
+struct kernel_thread kernel_threads[MAX_CORES];
+
 struct ACPISDTHeader {
   char Signature[4];
   uint32_t Length;
