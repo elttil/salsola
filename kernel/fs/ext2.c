@@ -551,6 +551,7 @@ struct vfs_fd *ext2_open(struct vfs_mount *mount, struct sv file, int flags,
     ASSIGN_PTR(err, ERROR_NO_MEMORY);
     return NULL;
   }
+  fd->outside_references = 0;
   fd->close = NULL;
   fd->offset = 0;
   fd->read = ext2_read;

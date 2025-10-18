@@ -9,7 +9,14 @@
 #include <sys/types.h>
 #include <typedefs.h>
 
+struct memory_mapping {
+  struct vfs_fd *fd;
+  void *address;
+  size_t length;
+};
+
 DEFINE_LIST_STRUCT(list_fd, struct vfs_fd *)
+DEFINE_LIST_STRUCT(list_memory, struct memory_mapping *)
 
 struct tcb {
   u64 rsp;
@@ -23,6 +30,7 @@ struct task {
   u64 pid;
   void *program_stop;
   struct list_fd_ctx fds;
+  struct list_memory_ctx mappings;
   struct mmu_directory *directory;
   struct task *next;
 };
@@ -34,7 +42,9 @@ void task_exec(struct sv file);
 err_t task_fd_open(u64 *fd, struct sv path, int flags);
 err_t task_fd_write(u64 fd, const void *buffer, u64 count, u64 *out);
 err_t task_fd_read(u64 fd, void *buffer, u64 count, u64 *out);
-void task_fd_close(u64 fd);
+err_t task_fd_close(u64 fd);
 void *task_sbrk(uintptr_t increment);
 err_t task_lseek(u64 fd, off_t offset, int whence, off_t *out);
+err_t task_mmap(void *addr, size_t length, int prot, int flags, int fd,
+                off_t offset, void **out);
 #endif // TASK_H

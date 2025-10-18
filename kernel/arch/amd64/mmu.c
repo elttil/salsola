@@ -35,8 +35,9 @@ struct PML4T {
   struct PDPT *pdpt[512];
 };
 
-bool check_virtual_region_is_free(void *address, void **physical, bool allocate,
-                                  bool use_frame, void *frame, u32 flags);
+static bool check_virtual_region_is_free(void *address, void **physical,
+                                         bool allocate, bool use_frame,
+                                         void *frame, u32 flags);
 
 extern struct PML4T PML4T;
 
@@ -147,11 +148,31 @@ bool mmu_is_region_free(void *address, size_t length) {
 void *mmu_find_free_virtual_region(size_t length) {
   for (size_t offset = 0;; offset += PAGE_SIZE) {
     if (mmu_is_region_free((void *)((uintptr_t)heap_end + offset), length)) {
-      return (void *)((uintptr_t)heap_end + offset);
+
+      void *r = (void *)((uintptr_t)heap_end + offset);
+      if (PAGE_SIZE == length) {
+        heap_end = (void *)((uintptr_t)heap_end + offset + length);
+      }
+      return r;
     }
   }
   assert(0);
   return NULL;
+}
+
+void *mmu_map_frames_to_region(void *src, size_t length, void *virtual,
+                               int flags) {
+  uintptr_t p = (uintptr_t)src;
+  for (size_t i = 0; i < length; i += PAGE_SIZE) {
+    assert(check_virtual_region_is_free((void *)((uintptr_t) virtual + i), NULL,
+                                        true, true, (void *)p,
+                                        flags | MMU_FLAG_PRESENT));
+    p += PAGE_SIZE;
+  }
+
+  uintptr_t offset = (uintptr_t)src & 0xFFF;
+  virtual = (void *)((uintptr_t) virtual + offset);
+  return virtual;
 }
 
 void *mmu_map_frames(void *src, size_t length) {
@@ -202,8 +223,8 @@ void mmu_unmap_frames(void *src, size_t length) {
   flush_tlb();
 }
 
-err_t mmu_allocate_random_region(void *address, size_t length,
-                                 bool is_userspace, int flags, void **out) {
+err_t mmu_setup_random_region(void *address, size_t length, bool is_userspace,
+                              bool allocate, int flags, void **out) {
   // TODO: Use the address as a suggestion as to where the region should
   // be placed, for the NULL case the mapping will be truly random.
   // Maybe this should even be moved to a different function?
@@ -220,15 +241,15 @@ err_t mmu_allocate_random_region(void *address, size_t length,
     }
 
     address &= ~(0xFFF);
-
     if (!mmu_is_region_free((void *)address, length)) {
       continue;
     }
 
-    mmu_allocate_region((void *)address, length, flags);
+    if (allocate) {
+      mmu_allocate_region((void *)address, length, flags);
+    }
 
     ASSIGN_PTR(out, (void *)address);
-
     return ERROR_SUCCESS;
   }
 }
@@ -413,8 +434,9 @@ void allocate_next_pt(void *address, u32 flags) {
 //   Returns false if region already exists
 //   Returns false if region did not allocate
 //   Return true if the region did not exist and was allocated
-bool check_virtual_region_is_free(void *address, void **physical, bool allocate,
-                                  bool use_frame, void *frame, u32 flags) {
+static bool check_virtual_region_is_free(void *address, void **physical,
+                                         bool allocate, bool use_frame,
+                                         void *frame, u32 flags) {
   const int PT_SHIFT = 12;
   const int PDT_SHIFT = 12 + 9 * 1;
   const int PDPT_SHIFT = 12 + 9 * 2;

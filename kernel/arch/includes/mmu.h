@@ -9,6 +9,7 @@
 #define MMU_FLAG_PRESENT (1 << 0)
 #define MMU_FLAG_RW (1 << 1)
 #define MMU_FLAG_USER (1 << 2)
+#define MMU_FLAG_PCD (1 << 4)
 
 // Depends upon a C version after C99 since it uses `typeof`
 #define align_up(address, alignment)                                           \
@@ -44,6 +45,8 @@ void mmu_lazy_set_directory(struct mmu_directory *directory);
 err_t mmu_get_user_sv(char *string, size_t length, struct sv *s);
 err_t mmu_assign_user_ptr(void *dst, const void *src, size_t size);
 err_t mmu_verify_user_pointer(const void *ptr, u64 length);
-err_t mmu_allocate_random_region(void *address, size_t length, bool is_userspace, int flags,
-                                 void **out);
+err_t mmu_setup_random_region(void *address, size_t length, bool is_userspace,
+                              bool allocate, int flags, void **out);
+void *mmu_map_frames_to_region(void *src, size_t length, void *virtual,
+                               int flags);
 #endif // MMU_H

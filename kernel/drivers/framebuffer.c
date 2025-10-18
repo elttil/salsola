@@ -46,6 +46,25 @@ size_t framebuffer_read(struct vfs_fd *fd, void *buffer, size_t length,
   return out;
 }
 
+err_t framebuffer_mmap(struct vfs_fd *fd, void *addr, size_t length, int prot,
+                       int flags, size_t offset, void **out) {
+  // TODO: Offset
+  (void)offset;
+  (void)flags;
+  (void)prot;
+  struct display_info *info = fd->internal_object;
+
+  void *to_allocate = (void *)info->framebuffer_physical;
+  size_t allocation_size = length;
+
+  void *r;
+  TRY(mmu_setup_random_region(addr, length, true, false, 0, &r));
+  r = mmu_map_frames_to_region(to_allocate, allocation_size, r,
+                               MMU_FLAG_RW | MMU_FLAG_USER | MMU_FLAG_PCD);
+  ASSIGN_PTR(out, r);
+  return ERROR_SUCCESS;
+}
+
 bool framebuffer_open(struct vfs_fd *fd, struct sv file, int flags,
                       void *internal_object, int *err) {
   (void)file;
@@ -55,6 +74,7 @@ bool framebuffer_open(struct vfs_fd *fd, struct sv file, int flags,
   fd->type = VFS_TYPE_BLOCK_DEVICE;
   fd->read = framebuffer_read;
   fd->write = framebuffer_write;
+  fd->mmap = framebuffer_mmap;
   return true;
 }
 

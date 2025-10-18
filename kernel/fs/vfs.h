@@ -29,10 +29,14 @@ struct vfs_fd {
   size_t (*write)(struct vfs_fd *fd, const void *buffer, size_t length,
                   size_t offset, err_t *err);
   err_t (*lseek)(struct vfs_fd *fd, off_t offset, int whence, off_t *out);
+  err_t (*mmap)(struct vfs_fd *fd, void *addr, size_t length, int prot,
+                int flags, size_t offset, void **out);
 
   int type;
   void *internal_object;
   void (*close)(struct vfs_fd *fd);
+
+  u32 outside_references;
 
   // Is set by the VFS, not the FS
   size_t offset;
@@ -43,12 +47,16 @@ bool vfs_init(void);
 struct vfs_fd *vfs_open(struct sv file, int flags, err_t *err);
 bool vfs_add_mount(struct sv path, struct vfs_mount *root);
 struct vfs_mount *vfs_find_mount(struct sv path);
-size_t vfs_pread(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
-                 err_t *err);
 size_t vfs_read(struct vfs_fd *fd, void *buffer, size_t length, err_t *err);
 size_t vfs_write(struct vfs_fd *fd, const void *buffer, size_t length,
                  err_t *err);
+size_t vfs_pread(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
+                 err_t *err);
+size_t vfs_pwrite(struct vfs_fd *fd, const void *buffer, size_t length,
+                  size_t offset, err_t *err);
 err_t vfs_lseek(struct vfs_fd *fd, off_t offset, int whence, off_t *out);
+err_t vfs_mmap(struct vfs_fd *fd, void *addr, size_t length, int prot,
+               int flags, size_t offset, void **out);
 void vfs_close(struct vfs_fd *fd);
 
 #endif // VFS_H

@@ -29,12 +29,6 @@ struct vfs_mount *vfs_find_mount(struct sv path) {
 
 size_t vfs_pread(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
                  err_t *err) {
-  assert(fd);
-  assert(fd->read);
-  return fd->read(fd, buffer, length, offset, err);
-}
-
-size_t vfs_read(struct vfs_fd *fd, void *buffer, size_t length, err_t *err) {
   if (!fd) {
     ASSIGN_PTR(err, ERROR_INVALID_FD);
     return 0;
@@ -43,13 +37,17 @@ size_t vfs_read(struct vfs_fd *fd, void *buffer, size_t length, err_t *err) {
     ASSIGN_PTR(err, ERROR_FD_HAS_NO_READ);
     return 0;
   }
-  size_t r = fd->read(fd, buffer, length, fd->offset, err);
+  return fd->read(fd, buffer, length, offset, err);
+}
+
+size_t vfs_read(struct vfs_fd *fd, void *buffer, size_t length, err_t *err) {
+  size_t r = vfs_pread(fd, buffer, length, fd->offset, err);
   fd->offset += r;
   return r;
 }
 
-size_t vfs_write(struct vfs_fd *fd, const void *buffer, size_t length,
-                 err_t *err) {
+size_t vfs_pwrite(struct vfs_fd *fd, const void *buffer, size_t length,
+                  size_t offset, err_t *err) {
   if (!fd) {
     ASSIGN_PTR(err, ERROR_INVALID_FD);
     return 0;
@@ -58,7 +56,12 @@ size_t vfs_write(struct vfs_fd *fd, const void *buffer, size_t length,
     ASSIGN_PTR(err, ERROR_FD_HAS_NO_WRITE);
     return 0;
   }
-  size_t r = fd->write(fd, buffer, length, fd->offset, err);
+  return fd->write(fd, buffer, length, offset, err);
+}
+
+size_t vfs_write(struct vfs_fd *fd, const void *buffer, size_t length,
+                 err_t *err) {
+  size_t r = vfs_pwrite(fd, buffer, length, fd->offset, err);
   fd->offset += r;
   return r;
 }
@@ -93,7 +96,24 @@ bool vfs_add_mount(struct sv path, struct vfs_mount *root) {
   return true;
 }
 
+err_t vfs_mmap(struct vfs_fd *fd, void *addr, size_t length, int prot,
+               int flags, size_t offset, void **out) {
+  if (!fd) {
+    return ERROR_INVALID_FD;
+  }
+  if (!fd->mmap) {
+    return ERROR_FD_HAS_NO_MMAP;
+  }
+  return fd->mmap(fd, addr, length, prot, flags, offset, out);
+}
+
 void vfs_close(struct vfs_fd *fd) {
+  // Check if there are existing mmaps that rely upon the vfs_fd object
+  // existing
+  if (0 != fd->outside_references) {
+    return;
+  }
+
   if (fd->close) {
     fd->close(fd);
   }

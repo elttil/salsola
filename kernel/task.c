@@ -10,6 +10,7 @@
 #include <task.h>
 
 DEFINE_LIST_FUNCTIONS(list_fd, struct vfs_fd *)
+DEFINE_LIST_FUNCTIONS(list_memory, struct memory_mapping *)
 
 struct task *task_head = NULL;
 u64 active_pid = 0;
@@ -30,6 +31,7 @@ bool task_init(void) {
   task_head->next = NULL;
   task_head->pid = active_pid;
   list_fd_init(&task_head->fds);
+  list_memory_init(&task_head->mappings);
   active_pid++;
 
   task_head->directory = mmu_get_active_directory();
@@ -114,16 +116,48 @@ err_t task_mmap(void *addr, size_t length, int prot, int flags, int fd,
   (void)prot;
   (void)offset;
   if (flags & MAP_ANONYMOUS) {
-    err_t rc = mmu_allocate_random_region(addr, length, true,
-                                          MMU_FLAG_RW | MMU_FLAG_USER, out);
+    err_t rc = mmu_setup_random_region(addr, length, true, true,
+                                       MMU_FLAG_RW | MMU_FLAG_USER, out);
     if (ERROR_SUCCESS == rc) {
-      memset(out, 0, length);
+      if (out) {
+        memset(*out, 0, length);
+      }
     }
     return rc;
   }
-  // TODO: File backed mmaps
-  (void)fd;
-  return ERROR_MMAP_NOT_SUPPORTED;
+  struct vfs_fd *fd_ptr;
+  list_fd_get(&get_current_task()->fds, fd, &fd_ptr);
+  if (!fd_ptr) {
+    return ERROR_INVALID_FD;
+  }
+
+  struct memory_mapping *map = kmalloc(sizeof(struct memory_mapping));
+  if (!map) {
+    return ERROR_NO_MEMORY;
+  }
+  map->fd = fd_ptr;
+
+  u64 index;
+
+  err_t rc;
+  if (ERROR_SUCCESS !=
+      (rc = list_memory_add(&get_current_task()->mappings, map, &index))) {
+    kfree(map);
+    return rc;
+  }
+
+  void *r;
+  if (ERROR_SUCCESS !=
+      (rc = vfs_mmap(fd_ptr, addr, length, prot, flags, offset, &r))) {
+    kfree(map);
+    list_memory_set(&get_current_task()->mappings, index, NULL);
+    return rc;
+  }
+  map->address = r;
+  map->length = length;
+
+  ASSIGN_PTR(out, r);
+  return ERROR_SUCCESS;
 }
 
 void task_exec(struct sv file) {
@@ -159,6 +193,7 @@ err_t task_fork(u64 *pid) {
   task->pid = active_pid;
   active_pid++;
   list_fd_init(&task->fds);
+  list_memory_init(&task->mappings);
 
   task->next = task_head;
   task_head = task;
