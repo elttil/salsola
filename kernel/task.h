@@ -13,6 +13,7 @@ struct memory_mapping {
   struct vfs_fd *fd;
   void *address;
   size_t length;
+  int flags;
 };
 
 DEFINE_LIST_STRUCT(list_fd, struct vfs_fd *)
