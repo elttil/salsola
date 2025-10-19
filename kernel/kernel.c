@@ -89,9 +89,15 @@ void kmain2(void) {
   }
 }
 
-void kmain(u32 magic, void *arg) {
+void kmain(u32 magic, void *arg, bool has_sse) {
   if (MULTIBOOT2_BOOTLOADER_MAGIC != magic) {
     kprintf("Invalid magic: %x\n", magic);
+    return;
+  }
+
+  if (!has_sse) {
+    kprintf("CPU does not support SSE. The OS does not support no SSE so we "
+            "don't boot :(\n");
     return;
   }
 

@@ -176,6 +176,26 @@ Realm64:
     mov gs, ax
     mov ss, ax
 
+    ; setup SSE
+    mov rdx, 0
+
+    mov eax, 0x1
+    cpuid
+    test edx, 1<<25
+    jz .noSSE
+
+    mov rax, cr0
+    and ax, 0xFFFB
+    or ax, 0x2
+    mov cr0, rax
+    mov rax, cr4
+    or ax, 3 << 9
+    mov cr4, rax
+
+    mov rdx, 1
+
+.noSSE:
+
 	pop rdi
 	pop rsi
 	call kmain
