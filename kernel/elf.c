@@ -47,7 +47,7 @@ void *elf_load_file(struct sv file, void **ds) {
     u64 p_vaddr = program_header.p_vaddr;
 
     u64 pages_to_allocate =
-        (u64)align_up((void *)(p_vaddr + p_memsz), PAGE_SIZE);
+        (u64)align_up_ptr((void *)(p_vaddr + p_memsz), PAGE_SIZE);
     pages_to_allocate -= p_vaddr - (p_vaddr % 0x1000);
     pages_to_allocate /= 0x1000;
 

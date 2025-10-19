@@ -11,11 +11,17 @@
 #define MMU_FLAG_USER (1 << 2)
 #define MMU_FLAG_PCD (1 << 4)
 
-// Depends upon a C version after C99 since it uses `typeof`
-#define align_up(address, alignment)                                           \
+#define align_up_int(address, alignment)                                           \
   ((0 == ((uintptr_t)address) % ((uintptr_t)alignment))                        \
        ? (address)                                                             \
-       : (typeof(address))((((uintptr_t)address) -                             \
+       : (uintptr_t)((((uintptr_t)address) -                             \
+                            ((uintptr_t)address % alignment)) +                \
+                           ((uintptr_t)alignment)))
+
+#define align_up_ptr(address, alignment)                                           \
+  ((0 == ((uintptr_t)address) % ((uintptr_t)alignment))                        \
+       ? (address)                                                             \
+       : (void*)((((uintptr_t)address) -                             \
                             ((uintptr_t)address % alignment)) +                \
                            ((uintptr_t)alignment)))
 

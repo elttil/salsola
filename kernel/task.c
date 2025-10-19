@@ -183,7 +183,7 @@ void task_exec(struct sv file) {
   uintptr_t stack_length = 0x5000;
   void *stack_ptr = (void *)((uintptr_t)program_end +
                              /*GUARD PAGE*/ stack_diff + stack_length);
-  stack_ptr = align_up(stack_ptr, PAGE_SIZE);
+  stack_ptr = align_up_ptr(stack_ptr, PAGE_SIZE);
   get_current_task()->program_stop = stack_ptr;
   get_current_task()->program_stop += PAGE_SIZE; // Guard page
   mmu_allocate_region(stack_ptr - stack_length, stack_length,

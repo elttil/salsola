@@ -294,7 +294,7 @@ void *ksbrk_physical(size_t length, void **physical) {
     *physical = r;
   }
 
-  prng_get_pseudorandom(rc, align_up(length, PAGE_SIZE));
+  prng_get_pseudorandom(rc, align_up_int(length, PAGE_SIZE));
   return rc;
 }
 
@@ -356,7 +356,7 @@ void *mmu_virtual_to_physical(void *address, bool *exists) {
 }
 
 void *safe_allocation(size_t length, void **physical) {
-  void *p = get_frame(true, (align_up(length, PAGE_SIZE)) / PAGE_SIZE);
+  void *p = get_frame(true, (align_up_int(length, PAGE_SIZE)) / PAGE_SIZE);
   void *a = mmu_find_free_virtual_region(length);
 
   if (physical) {
@@ -372,7 +372,7 @@ void *safe_allocation(size_t length, void **physical) {
     phys_ptr += PAGE_SIZE;
     ptr += PAGE_SIZE;
   }
-  memset(a, 0, align_up(length, PAGE_SIZE));
+  memset(a, 0, align_up_int(length, PAGE_SIZE));
   return a;
 }
 
@@ -693,7 +693,7 @@ int mmu_init(void *multiboot_header) {
       (struct PML4T *)(((uintptr_t)&PML4T) + 0xffffff8000000000);
   active_directory->physical = &PML4T;
 
-  heap_end = align_up(&_kernel_end, 0x1000);
+  heap_end = align_up_ptr(&_kernel_end, 0x1000);
   heap_end = (void *)((uintptr_t)heap_end + 0x1000);
 
   memset(frames, 0xFF, sizeof(frames));

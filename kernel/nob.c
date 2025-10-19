@@ -71,8 +71,7 @@ char *ld_flags[] = {
 };
 
 char *c_flags[] = {
-    "-std=c2x",
-    "-O0",
+    "-std=c99",
     "-mcmodel=large",
     "-ggdb",
     "-ffreestanding",

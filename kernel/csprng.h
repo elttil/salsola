@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <sv.h>
 #include <typedefs.h>
 
