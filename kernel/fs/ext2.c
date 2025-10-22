@@ -208,27 +208,25 @@ static void write_block(struct ext2_ctx *ctx, u32 block, const void *address,
   assert(err == ERROR_SUCCESS);
 }
 
-static void get_inode_header(struct ext2_ctx *ctx, u32 inode_index, u8 *data) {
-  memset(data + sizeof(inode_t), 0, ctx->inode_size - sizeof(inode_t));
+// static void get_inode_header(struct ext2_ctx *ctx, u32 inode_index, u8 *data)
+// {
+static void get_inode_header(struct ext2_ctx *ctx, u32 inode_index,
+                             inode_t *inode) {
   u32 block_index;
   u32 block_offset;
   get_block_containing_inode(ctx, inode_index, &block_index, &block_offset);
 
-  u8 mem_block[ctx->inode_size];
-  read_block(ctx, block_index, mem_block, ctx->inode_size, block_offset);
-
-  memcpy(data, mem_block, ctx->inode_size);
+  read_block(ctx, block_index, inode, sizeof(inode_t), block_offset);
 }
 
 static size_t read_inode(struct ext2_ctx *ctx, u32 inode_num, u8 *data,
                          u64 size, u64 offset, u64 *file_size) {
   // TODO: Fail if size is lower than the size of the file being read, and
   //       return the size of the file the callers is trying to read.
-  u8 inode_buffer[ctx->inode_size];
-  get_inode_header(ctx, inode_num, inode_buffer);
-  inode_t *inode = (inode_t *)inode_buffer;
+  inode_t inode;
+  get_inode_header(ctx, inode_num, &inode);
 
-  u64 fsize = (u64)(((u64)inode->_upper_32size << 32) | (u64)inode->low_32size);
+  u64 fsize = (u64)(((u64)inode._upper_32size << 32) | (u64)inode.low_32size);
 
   if (file_size) {
     *file_size = fsize;
@@ -255,7 +253,7 @@ static size_t read_inode(struct ext2_ctx *ctx, u32 inode_num, u8 *data,
                        ? (ctx->block_byte_size - block_offset)
                        : size;
 
-    u32 block = get_block(ctx, inode, i);
+    u32 block = get_block(ctx, &inode, i);
     if (0 == block) {
       memset(data + bytes_read, 0, read_len);
     } else {
@@ -429,19 +427,24 @@ static void write_inode_header(struct ext2_ctx *ctx, int inode_index,
   u32 block_offset;
   get_block_containing_inode(ctx, inode_index, &block_index, &block_offset);
 
+  // TODO: If it is the first time we are writing to a inode header
+  // we should make sure that extra attributes of the inode
+  // datastructure are 0 by default. (ctx->inode_size may be larger than
+  // inode_t) Maybe there is a better solution to this as opposed to
+  // using a VLA.
   u8 mem_block[ctx->inode_size];
-  memcpy(mem_block, data, ctx->inode_size);
+  memset(mem_block, 0, ctx->inode_size);
+  memcpy(mem_block, data, sizeof(inode_t));
   write_block(ctx, block_index, mem_block, ctx->inode_size, block_offset);
 }
 
 static int write_inode(struct ext2_ctx *ctx, int inode_num, const void *data,
                        u64 size, u64 offset, u64 *file_size, int append) {
   (void)file_size;
-  u8 inode_buffer[ctx->inode_size];
-  get_inode_header(ctx, inode_num, inode_buffer);
-  inode_t *inode = (inode_t *)inode_buffer;
+  inode_t inode;
+  get_inode_header(ctx, inode_num, &inode);
 
-  u64 fsize = (u64)(((u64)inode->_upper_32size << 32) | (u64)inode->low_32size);
+  u64 fsize = (u64)(((u64)inode._upper_32size << 32) | (u64)inode.low_32size);
   if (append) {
     offset = fsize;
   }
@@ -450,7 +453,7 @@ static int write_inode(struct ext2_ctx *ctx, int inode_num, const void *data,
   u32 block_offset = offset % ctx->block_byte_size;
 
   int num_blocks_used =
-      inode->num_disk_sectors / (ctx->block_byte_size / SECTOR_SIZE);
+      inode.num_disk_sectors / (ctx->block_byte_size / SECTOR_SIZE);
 
   if (size + offset > fsize) {
     fsize = size + offset;
@@ -463,16 +466,16 @@ static int write_inode(struct ext2_ctx *ctx, int inode_num, const void *data,
     int blocks[delta];
     get_free_blocks(ctx, true, blocks, delta);
     for (u32 i = num_blocks_used; i < num_blocks_required; i++) {
-      assert(allocate_block(ctx, inode, i, blocks[i - num_blocks_used]));
+      assert(allocate_block(ctx, &inode, i, blocks[i - num_blocks_used]));
     }
   }
 
-  inode->num_disk_sectors =
+  inode.num_disk_sectors =
       num_blocks_required * (ctx->block_byte_size / SECTOR_SIZE);
 
   int bytes_written = 0;
   for (int i = block_start; size; i++) {
-    u32 block = get_block(ctx, inode, i);
+    u32 block = get_block(ctx, &inode, i);
     if (0 == block) {
       break;
     }
@@ -485,9 +488,9 @@ static int write_inode(struct ext2_ctx *ctx, int inode_num, const void *data,
     bytes_written += write_len;
     size -= write_len;
   }
-  inode->low_32size = fsize;
-  inode->_upper_32size = (fsize >> 32);
-  write_inode_header(ctx, inode_num, inode);
+  inode.low_32size = fsize;
+  inode._upper_32size = (fsize >> 32);
+  write_inode_header(ctx, inode_num, &inode);
   return bytes_written;
 }
 
