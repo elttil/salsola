@@ -171,6 +171,54 @@ err_t task_mmap(void *addr, size_t length, int prot, int flags, int fd,
   return ERROR_SUCCESS;
 }
 
+static err_t setup_stack(void *stack_pointer, u64 stack_length, int argc,
+                         char **argv, void **result) {
+  TRY(mmu_allocate_region(stack_pointer - stack_length, stack_length,
+                          MMU_FLAG_RW | MMU_FLAG_USER));
+
+  uintptr_t ptr = (uintptr_t)stack_pointer;
+
+  char *argv_ptrs[argc + 1];
+  for (int i = 0; i < argc; i++) {
+    char *s = argv[i];
+    size_t l = strlen(s);
+    ptr -= l + 1;
+    char *b = (char *)ptr;
+    memcpy(b, s, l);
+    b[l] = '\0';
+    argv_ptrs[i] = b;
+  }
+
+  char **ptrs[argc + 1];
+  for (int i = argc; i >= 0; i--) {
+    ptr -= sizeof(char *);
+    ptrs[i] = (char **)ptr;
+    if (i != argc) {
+      *(ptrs[i]) = argv_ptrs[i];
+    } else {
+      *(ptrs[i]) = NULL;
+    }
+  }
+
+  u64 tmp = ptr;
+
+  // Hacky thing to fix alignment
+  ptr -= 0xF * 2;
+  ptr &= ~(0xF);
+
+  char *s = (char *)tmp;
+  ptr -= sizeof(char **);
+  *(char ***)ptr = (char **)s;
+
+  ptr -= sizeof(u64);
+  *(int *)ptr = argc;
+
+  if (result) {
+    *result = (void *)ptr;
+  }
+  return ERROR_SUCCESS;
+}
+
 void task_exec(struct sv file) {
   // TODO: Deallocate userland
   void *program_end;
@@ -186,8 +234,12 @@ void task_exec(struct sv file) {
   stack_ptr = align_up_ptr(stack_ptr, PAGE_SIZE);
   get_current_task()->program_stop = stack_ptr;
   get_current_task()->program_stop += PAGE_SIZE; // Guard page
-  mmu_allocate_region(stack_ptr - stack_length, stack_length,
-                      MMU_FLAG_RW | MMU_FLAG_USER);
+
+  char *p = SV_TO_C(file);
+  char *argv[] = {p};
+  assert(ERROR_SUCCESS ==
+         setup_stack(stack_ptr, stack_length, 1, argv, &stack_ptr));
+  kfree(p);
 
   jump_usermode(entry, (void *)stack_ptr);
   assert(0);
