@@ -24,6 +24,14 @@ static struct task *get_current_task(void) {
   return kernel_threads[core_id_get()].current_task;
 }
 
+#define GET_FD(a, b)                                                           \
+  if (!list_fd_get(&get_current_task()->fds, (a), (b))) {                      \
+    return ERROR_INVALID_FD;                                                   \
+  }                                                                            \
+  if (!(*(b))) {                                                               \
+    return ERROR_INVALID_FD;                                                   \
+  }
+
 bool task_init(void) {
   task_head = kmalloc(sizeof(struct task));
   if (!task_head) {
@@ -46,6 +54,7 @@ err_t task_fd_open(u64 *fd, struct sv path, int flags) {
   err_t err;
   struct vfs_fd *fd_ptr = vfs_open(path, flags, &err);
   if (!fd_ptr) {
+    hint_assert(ERROR_SUCCESS != err);
     return err;
   }
 
@@ -58,10 +67,7 @@ err_t task_fd_open(u64 *fd, struct sv path, int flags) {
 
 err_t task_fd_read(u64 fd, void *buffer, u64 count, u64 *out) {
   struct vfs_fd *fd_ptr;
-  list_fd_get(&get_current_task()->fds, fd, &fd_ptr);
-  if (!fd_ptr) {
-    return ERROR_INVALID_FD;
-  }
+  GET_FD(fd, &fd_ptr);
   err_t err;
   u64 r = vfs_read(fd_ptr, buffer, count, &err);
   ASSIGN_PTR(out, r);
@@ -70,10 +76,7 @@ err_t task_fd_read(u64 fd, void *buffer, u64 count, u64 *out) {
 
 err_t task_fd_write(u64 fd, const void *buffer, u64 count, u64 *out) {
   struct vfs_fd *fd_ptr;
-  list_fd_get(&get_current_task()->fds, fd, &fd_ptr);
-  if (!fd_ptr) {
-    return ERROR_INVALID_FD;
-  }
+  GET_FD(fd, &fd_ptr);
   err_t err;
   u64 r = vfs_write(fd_ptr, buffer, count, &err);
   ASSIGN_PTR(out, r);
@@ -82,19 +85,13 @@ err_t task_fd_write(u64 fd, const void *buffer, u64 count, u64 *out) {
 
 err_t task_lseek(u64 fd, off_t offset, int whence, off_t *out) {
   struct vfs_fd *fd_ptr;
-  list_fd_get(&get_current_task()->fds, fd, &fd_ptr);
-  if (!fd_ptr) {
-    return ERROR_INVALID_FD;
-  }
+  GET_FD(fd, &fd_ptr);
   return vfs_lseek(fd_ptr, offset, whence, out);
 }
 
 err_t task_fd_close(u64 fd) {
   struct vfs_fd *fd_ptr;
-  list_fd_get(&get_current_task()->fds, fd, &fd_ptr);
-  if (!fd_ptr) {
-    return ERROR_INVALID_FD;
-  }
+  GET_FD(fd, &fd_ptr);
   vfs_close(fd_ptr);
   return ERROR_SUCCESS;
 }
@@ -140,10 +137,7 @@ static err_t allocate(struct memory_mapping *map, void *addr, size_t length,
     return ERROR_SUCCESS;
   }
   struct vfs_fd *fd_ptr;
-  list_fd_get(&get_current_task()->fds, fd, &fd_ptr);
-  if (!fd_ptr) {
-    return ERROR_INVALID_FD;
-  }
+  GET_FD(fd, &fd_ptr);
   map->fd = fd_ptr;
 
   void *r;
