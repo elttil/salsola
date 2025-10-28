@@ -13,6 +13,8 @@
 #define EXT2_SUPERBLOCK_SECTOR 2
 #define EXT2_ROOT_INODE 2
 
+#define EXT2_NUM_CACHE 1024
+
 #define BLOCKS_REQUIRED(_a, _b) ((_a) / (_b) + (((_a) % (_b)) != 0))
 
 #define INDIRECT_BLOCK_CAPACITY (ctx->block_byte_size / sizeof(u32))
@@ -21,6 +23,14 @@
   if (0 != (value % alignment)) {                                              \
     value += (alignment - (value % alignment));                                \
   }
+
+struct ext2_block_cache {
+  void *buffer;
+  u64 last_usage;
+  // TODO: Reduce struct size
+  u32 block_number;
+  bool in_use;
+};
 
 struct ext2_ctx {
   struct vfs_fd *fd;
@@ -32,6 +42,8 @@ struct ext2_ctx {
   u32 inode_size;
   u32 inodes_per_block;
   bool superblock_changed;
+  // TODO: Maybe allocate this differently
+  struct ext2_block_cache cache[EXT2_NUM_CACHE];
 };
 
 static void read_block(struct ext2_ctx *ctx, u32 block, void *address,
@@ -85,9 +97,12 @@ static void write_group_descriptor(struct ext2_ctx *ctx, u32 group_index,
 
 static void get_group_descriptor(struct ext2_ctx *ctx, u32 group_index,
                                  bgdt_t *block_group) {
-  int starting_block = (1024 == ctx->block_byte_size) ? 2 : 1;
-  read_block(ctx, starting_block, block_group, sizeof(bgdt_t),
-             group_index * sizeof(bgdt_t));
+  u32 starting_block = (1024 == ctx->block_byte_size) ? 2 : 1;
+
+  u32 block_index = (group_index * sizeof(bgdt_t)) / ctx->block_byte_size;
+  u32 block_offset = (group_index * sizeof(bgdt_t)) % ctx->block_byte_size;
+  read_block(ctx, starting_block + block_index, block_group, sizeof(bgdt_t),
+             block_offset);
 }
 
 static void write_to_indirect_block(struct ext2_ctx *ctx, u32 indirect_block,
@@ -191,11 +206,48 @@ static int allocate_block(struct ext2_ctx *ctx, inode_t *inode, u32 index,
 
 static void read_block(struct ext2_ctx *ctx, u32 block, void *address,
                        size_t size, size_t offset) {
-  // TODO: Cache
-  int err;
-  vfs_pread(ctx->fd, address, size, block * ctx->block_byte_size + offset,
-            &err);
-  assert(err == ERROR_SUCCESS);
+  int index = -1;
+  u64 min_last_usage = ~((u64)0);
+  for (int i = 0; i < EXT2_NUM_CACHE; i++) {
+    if (!ctx->cache[i].in_use) {
+      min_last_usage = 0;
+      index = i;
+      continue;
+    }
+    if (block == ctx->cache[i].block_number) {
+      index = i;
+      break;
+    }
+    if (ctx->cache[i].last_usage < min_last_usage) {
+      index = i;
+      min_last_usage = ctx->cache[i].last_usage;
+    }
+  }
+
+  struct ext2_block_cache *cache = &ctx->cache[index];
+
+  bool is_new = false;
+  if (!cache->in_use) {
+    cache->buffer = kmalloc(ctx->block_byte_size);
+    cache->in_use = true;
+    is_new = true;
+  }
+
+  if (is_new || block != cache->block_number) {
+    int err;
+    vfs_pread(ctx->fd, cache->buffer, ctx->block_byte_size,
+              block * ctx->block_byte_size, &err);
+    assert(err == ERROR_SUCCESS);
+    cache->block_number = block;
+  }
+
+  // kprintf("size: %d\n", size);
+  // kprintf("offset: %d\n", offset);
+  // kprintf("block_byte_size: %d\n", ctx->block_byte_size);
+  assert(size + offset <= ctx->block_byte_size);
+  memcpy(address, (u8 *)cache->buffer + offset, size);
+
+  cache->last_usage = rdtsc();
 }
 
 static void write_block(struct ext2_ctx *ctx, u32 block, const void *address,
