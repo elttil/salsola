@@ -36,9 +36,10 @@ struct PML4T {
   struct PDPT *pdpt[512];
 };
 
-#define MMU_PT_RANGE 0x1000
-#define MMU_PDT_RANGE ((MMU_PT_RANGE) * 512)
-#define MMU_PDPT_RANGE ((MMU_PDT_RANGE) * 512)
+#define MMU_PAGE_RANGE 0x1000
+#define MMU_PT_RANGE ((u64)(MMU_PAGE_RANGE) * 512)
+#define MMU_PDT_RANGE ((u64)(MMU_PT_RANGE) * 512)
+#define MMU_PDPT_RANGE ((u64)(MMU_PDT_RANGE) * 512)
 
 static bool check_virtual_region_is_free(void *address, void **physical,
                                          bool allocate, bool use_frame,
@@ -556,7 +557,7 @@ bool clone_pt(struct PT *orig_pt, struct PT **new_pt, void *virtual_address,
               void **physical, struct list_memory_ctx *maps) {
   *new_pt = safe_allocation(sizeof(struct PT), physical);
 
-  for (int i = 0; i < 512; i++, virtual_address += MMU_PT_RANGE) {
+  for (int i = 0; i < 512; i++, virtual_address += MMU_PAGE_RANGE) {
     int flags = orig_pt->page[i] & 0xFFF;
     if (!(flags & PAGE_FLAG_PRESENT)) {
       continue;
@@ -581,17 +582,14 @@ bool clone_pt(struct PT *orig_pt, struct PT **new_pt, void *virtual_address,
              (uintptr_t)map->address + map->length))) {
         continue;
       }
-      if ((map->flags & MAP_ANONYMOUS) && !(map->flags & MAP_STACK)) {
-        should_copy_frame = false;
+      if ((map->flags & MAP_ANONYMOUS)) {
+        should_copy_frame = true;
         break;
       }
       if (map->flags & MAP_SHARED) {
         should_copy_frame = false;
         (*new_pt)->page[i] = orig_pt->page[i];
         continue;
-      }
-      if ((map->flags & MAP_STACK)) {
-        should_copy_frame = true;
       }
     }
     if (!should_copy_frame) {
