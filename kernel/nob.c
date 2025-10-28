@@ -1,6 +1,9 @@
 #define NOB_IMPLEMENTATION
 #include "nob.h"
 
+#define FLAG_IMPLEMENTATION
+#include "./flag.h"
+
 char *asm_files[] = {
     "arch/amd64/lock.s", "arch/amd64/smp_asm.s",     "arch/amd64/idt_asm.s",
     "arch/amd64/io.s",   "arch/amd64/boot.s",        "arch/amd64/msr.s",
@@ -64,23 +67,11 @@ char *code_file_to_obj(char *file) {
   return obj;
 }
 
-/*
- * This flag implies
- * inlcude_ubsan = false;
- * CFLAGS=-O2
- * really_fast_build = false
- */
 bool release_build = false;
-
-/*
- * This flag implies
- * inlcude_ubsan = false;
- * CFLAGS=-O3
- * uses_lto = true;
- */
 bool really_fast_build = false;
-
-bool include_ubsan = true;
+bool small_build = false;
+bool ubsan = true;
+bool debug = false;
 
 /* Just appends -flto to LD and CC and removes stupid warnings */
 bool uses_lto = false;
@@ -94,7 +85,6 @@ char *ld_flags[] = {
 char *c_flags[] = {
     "-std=c99",
     "-mcmodel=large",
-    "-ggdb",
     "-ffreestanding",
     "-Wall",
     "-Wextra",
@@ -106,6 +96,7 @@ char *c_flags[] = {
     "-I./arch/includes/",
     "-I.",
     "-I../include/",
+    "-Werror=vla",
 };
 
 int format_files(Nob_File_Paths *files, Nob_Procs *procs) {
@@ -139,12 +130,19 @@ int build_c_file(char *file, char *object_output, Nob_Procs *procs,
   nob_cmd_append(&cmd, CC, "-o", object_output, "-c", file);
   nob_da_append_many(&cmd, c_flags, ARRAY_LEN(c_flags));
 
-  if (include_ubsan) {
+  if (ubsan) {
     nob_cmd_append(&cmd, "-fsanitize=vla-bound,shift-exponent,pointer-overflow,"
                          "shift,signed-integer-overflow,bounds");
   }
   if (release_build) {
     nob_cmd_append(&cmd, "-O2");
+  }
+
+  if (debug) {
+    nob_cmd_append(&cmd, "-ggdb");
+  }
+  if (small_build) {
+    nob_cmd_append(&cmd, "-Oz");
   }
   if (really_fast_build) {
     nob_cmd_append(&cmd, "-O3");
@@ -210,6 +208,12 @@ int create_iso_file(void) {
   return 1;
 }
 
+void usage(const char *program, FILE *stream) {
+  fprintf(stream, "Usage: %s [OPTIONS] [--] [ARGS]\n", program);
+  fprintf(stream, "OPTIONS:\n");
+  flag_print_options(stream);
+}
+
 int main(int argc, char **argv) {
   NOB_GO_REBUILD_URSELF(argc, argv);
 
@@ -217,27 +221,46 @@ int main(int argc, char **argv) {
   bool flag_build = true;
   bool flag_build_override = false;
 
-  for (int i = 1; i < argc; i++) {
-    if (0 == strcmp(argv[i], "clean")) {
-      flag_clean = true;
-      flag_build = false;
-    }
-    if (0 == strcmp(argv[i], "build")) {
-      flag_build_override = true;
-    }
-    if (0 == strcmp(argv[i], "release")) {
-      release_build = true;
-    }
-    if (0 == strcmp(argv[i], "fast")) {
-      really_fast_build = true;
-    }
-    if (0 == strcmp(argv[i], "lto")) {
-      uses_lto = true;
-    }
-    if (0 == strcmp(argv[i], "no_ubsan")) {
-      include_ubsan = false;
-    }
+  flag_bool_var(&flag_clean, "clean", false, "Boolean flag");
+  flag_bool_var(&flag_build_override, "build", false, "Boolean flag");
+  flag_bool_var(&release_build, "release", false, "Boolean flag");
+  flag_bool_var(&really_fast_build, "fast", false, "Boolean flag");
+  flag_bool_var(&uses_lto, "lto", false, "Boolean flag");
+  flag_bool_var(&debug, "debug", true, "Boolean flag");
+  flag_bool_var(&small_build, "small", false, "Boolean flag");
+  flag_bool_var(&ubsan, "ubsan", true, "Boolean flag");
+
+  if (!flag_parse(argc, argv)) {
+    usage(argv[0], stderr);
+    flag_print_error(stderr);
+    return 1;
   }
+
+  argc = flag_rest_argc();
+  argv = flag_rest_argv();
+
+  if (flag_clean) {
+    flag_build = false;
+  }
+
+  if (release_build) {
+    ubsan = false;
+  }
+
+  if (really_fast_build) {
+    ubsan = false;
+    uses_lto = true;
+  }
+
+  if (small_build) {
+    ubsan = false;
+    uses_lto = true;
+  }
+
+  if (release_build || really_fast_build || uses_lto || small_build) {
+    flag_build_override = true;
+  }
+
   if (!flag_build) {
     flag_build = flag_build_override;
   }
@@ -257,25 +280,15 @@ int main(int argc, char **argv) {
     return 0;
   }
 
-  if (release_build) {
-    really_fast_build = false;
-    include_ubsan = false;
-  }
-
-  if (really_fast_build) {
-    include_ubsan = false;
-    uses_lto = true;
-  }
-
   Nob_Cmd cmd = {0};
   nob_cmd_append(&cmd, CC, "-T", "linker.ld", "-o", TARGET ".elf");
 
   nob_da_append_many(&cmd, ld_flags, ARRAY_LEN(ld_flags));
   if (uses_lto) {
     nob_cmd_append(&cmd, "-flto");
-    // NOTE: GCC is stupid and can't figure out that calling arguments
-    // from assembly code are initialized.
-    nob_cmd_append(&cmd, "-Wno-maybe-uninitialized");
+  }
+  if (debug) {
+    nob_cmd_append(&cmd, "-ggdb");
   }
   nob_da_append_many(&cmd, c_flags, ARRAY_LEN(c_flags));
 
