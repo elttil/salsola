@@ -112,9 +112,8 @@ static void get_block_containing_inode(struct ext2_ctx *ctx, u32 inode_index,
 
 static u32 get_singly_block_index(struct ext2_ctx *ctx, u32 singly_block_ptr,
                                   u32 i) {
-  u8 block[ctx->block_byte_size];
-  read_block(ctx, singly_block_ptr, block, ctx->block_byte_size, 0);
-  u32 index = *(u32 *)(block + (i * (32 / 8)));
+  u32 index;
+  read_block(ctx, singly_block_ptr, &index, sizeof(index), (i * (32 / 8)));
   return index;
 }
 
