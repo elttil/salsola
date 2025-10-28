@@ -6,6 +6,7 @@
 #include <mmu.h>
 #include <stddef.h>
 #include <sv.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <syscall.h>
 #include <syscalls.h>
@@ -77,6 +78,23 @@ err_t syscall_mmap(void *addr, size_t length, int prot, int flags, int fd,
   return task_mmap(addr, length, prot, flags, fd, offset, out);
 }
 
+err_t syscall_fstat(u64 fd, struct stat *buf) {
+  // TODO:
+  (void)fd;
+  (void)buf;
+  return ERROR_SUCCESS;
+}
+
+err_t syscall_fork(pid_t *pid) {
+  TRY(mmu_verify_user_pointer(pid, sizeof(pid_t)));
+  u64 p;
+  err_t err = task_fork(&p);
+  if (pid) {
+    *pid = p;
+  }
+  return err;
+}
+
 u64 syscall_handler(const struct syscall_arguments *regs) {
   u64 syscall = regs->rdi;
   const u64 args[7] = {regs->rsi, regs->rdx, regs->rbx, regs->r8,
@@ -99,6 +117,10 @@ u64 syscall_handler(const struct syscall_arguments *regs) {
     return syscall_randomfill((void *)args[0], args[1]);
   case SYS_LSEEK:
     return task_lseek(args[0], args[1], args[2], (off_t *)args[3]);
+  case SYS_FSTAT:
+    return syscall_fstat(args[0], (void *)args[1]);
+  case SYS_FORK:
+    return syscall_fork((void *)args[0]);
   default:
     assert(0);
     break;

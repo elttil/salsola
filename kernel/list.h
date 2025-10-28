@@ -9,14 +9,23 @@
     type *items;                                                               \
     uint64_t length;                                                           \
     uint64_t capacity;                                                         \
-  };
+  };                                                                           \
+  void prefix##_init(struct prefix##_ctx *ctx);                                \
+  void prefix##_free(struct prefix##_ctx *ctx);                                \
+  bool prefix##_add(struct prefix##_ctx *ctx, type value, u64 *index);         \
+  bool prefix##_get(const struct prefix##_ctx *ctx, u64 index, type *value);   \
+  bool prefix##_clone(struct prefix##_ctx *ctx,                                \
+                      const struct prefix##_ctx *source);                      \
+  bool prefix##_find_index_by_value(struct prefix##_ctx *ctx, u64 *index,      \
+                                    type value);                               \
+  bool prefix##_set(struct prefix##_ctx *ctx, u64 index, type value);
 
 #define DEFINE_LIST_FUNCTIONS(prefix, type)                                    \
   void prefix##_init(struct prefix##_ctx *ctx) {                               \
     ctx->items = NULL;                                                         \
     ctx->length = 0;                                                           \
     ctx->capacity = 128;                                                       \
-    ctx->items = kreallocarray(ctx->items, ctx->capacity, sizeof(type));       \
+    ctx->items = krecalloc(ctx->items, ctx->capacity, sizeof(type));           \
     if (!ctx->items) {                                                         \
       ctx->capacity = 0;                                                       \
     }                                                                          \
@@ -33,7 +42,7 @@
     if (ctx->length == ctx->capacity) {                                        \
       u64 new_capacity = ctx->capacity + 128;                                  \
       void *new_allocation =                                                   \
-          kreallocarray(ctx->items, new_capacity, sizeof(type));               \
+          krecalloc(ctx->items, new_capacity, sizeof(type));               \
       if (!new_allocation) {                                                   \
         return false;                                                          \
       }                                                                        \
@@ -48,12 +57,24 @@
     return true;                                                               \
   }                                                                            \
                                                                                \
-  bool prefix##_get(struct prefix##_ctx *ctx, u64 index, type *value) {        \
+  bool prefix##_get(const struct prefix##_ctx *ctx, u64 index, type *value) {  \
     if (index >= ctx->length) {                                                \
       return false;                                                            \
     }                                                                          \
     if (value) {                                                               \
       memcpy(value, ctx->items + index, sizeof(type));                         \
+    }                                                                          \
+    return true;                                                               \
+  }                                                                            \
+                                                                               \
+  bool prefix##_clone(struct prefix##_ctx *ctx,                                \
+                      const struct prefix##_ctx *source) {                     \
+    prefix##_init(ctx);                                                        \
+    type value;                                                                \
+    for (u64 i = 0; i < source->length; i++) {                                 \
+      assert(prefix##_get(source, i, &value));                                 \
+      /* TODO: Handle OOM */                                                   \
+      assert(prefix##_add(ctx, value, NULL));                                  \
     }                                                                          \
     return true;                                                               \
   }                                                                            \

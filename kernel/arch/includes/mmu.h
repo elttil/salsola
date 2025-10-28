@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <sv.h>
+#include <task.h>
 #include <typedefs.h>
 
 #define MMU_FLAG_PRESENT (1 << 0)
@@ -11,19 +12,18 @@
 #define MMU_FLAG_USER (1 << 2)
 #define MMU_FLAG_PCD (1 << 4)
 
-#define align_up_int(address, alignment)                                           \
+#define align_up_int(address, alignment)                                       \
   ((0 == ((uintptr_t)address) % ((uintptr_t)alignment))                        \
        ? (address)                                                             \
-       : (uintptr_t)((((uintptr_t)address) -                             \
-                            ((uintptr_t)address % alignment)) +                \
-                           ((uintptr_t)alignment)))
+       : (uintptr_t)((((uintptr_t)address) -                                   \
+                      ((uintptr_t)address % alignment)) +                      \
+                     ((uintptr_t)alignment)))
 
-#define align_up_ptr(address, alignment)                                           \
+#define align_up_ptr(address, alignment)                                       \
   ((0 == ((uintptr_t)address) % ((uintptr_t)alignment))                        \
        ? (address)                                                             \
-       : (void*)((((uintptr_t)address) -                             \
-                            ((uintptr_t)address % alignment)) +                \
-                           ((uintptr_t)alignment)))
+       : (void *)((((uintptr_t)address) - ((uintptr_t)address % alignment)) +  \
+                  ((uintptr_t)alignment)))
 
 #define PAGE_SIZE 0x1000
 
@@ -40,7 +40,8 @@ void *mmu_virtual_to_physical(void *address, bool *exists);
 void *mmu_physical_to_virtual(void *address, bool *exists);
 void *mmu_map_frames(void *src, size_t length);
 void mmu_update_stack(void (*function)());
-struct mmu_directory *mmu_clone_directory(struct mmu_directory *directory);
+struct mmu_directory *mmu_clone_directory(struct mmu_directory *directory,
+                                          struct list_memory_ctx *maps);
 struct mmu_directory *mmu_get_active_directory(void);
 void mmu_set_directory(struct mmu_directory *directory);
 void mmu_unmap_frames(void *src, size_t length);

@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <sv.h>
+#include <sys/mman.h>
 
 bool active_bootstrap = true;
 
@@ -34,6 +35,10 @@ struct PML4T {
   uintptr_t physical[512];
   struct PDPT *pdpt[512];
 };
+
+#define MMU_PT_RANGE 0x1000
+#define MMU_PDT_RANGE ((MMU_PT_RANGE) * 512)
+#define MMU_PDPT_RANGE ((MMU_PDT_RANGE) * 512)
 
 static bool check_virtual_region_is_free(void *address, void **physical,
                                          bool allocate, bool use_frame,
@@ -74,7 +79,7 @@ err_t mmu_verify_user_pointer(const void *ptr, u64 length) {
 
 struct mmu_directory orig_active_directory;
 
-#define NUM_OF_FRAMES 256
+#define NUM_OF_FRAMES 2048
 
 uint64_t frames[NUM_OF_FRAMES];
 size_t num_pages = 0;
@@ -522,18 +527,10 @@ bool mmu_allocate_region(void *address, size_t length, int flags) {
 void mmu_update_stack(void (*function)()) {
   void *new_stack = (void *)0xffffff8000000000 - 0x1000 /*Guard page*/;
 
-  size_t stack_size = 0x8000;
+  size_t stack_size = 0xA000;
 
   mmu_allocate_region(new_stack - stack_size, stack_size,
                       MMU_FLAG_RW | MMU_FLAG_PRESENT);
-
-  /*
-  for (size_t i = 0x1000; i < stack_size; i += PAGE_SIZE) {
-    assert(check_virtual_region_is_free((void *)((uintptr_t)new_stack - i),
-                                        NULL, true, false, NULL,
-                                        MMU_FLAG_RW | MMU_FLAG_PRESENT));
-  }
-  */
 
   goto_function_with_stack(function, new_stack);
 }
@@ -555,14 +552,52 @@ void copy_frame(void *physical_dst, void *physical_src) {
   mmu_unmap_frames(src, PAGE_SIZE);
 }
 
-bool clone_pt(struct PT *orig_pt, struct PT **new_pt, void **physical) {
+bool clone_pt(struct PT *orig_pt, struct PT **new_pt, void *virtual_address,
+              void **physical, struct list_memory_ctx *maps) {
   *new_pt = safe_allocation(sizeof(struct PT), physical);
 
-  for (int i = 0; i < 512; i++) {
+  for (int i = 0; i < 512; i++, virtual_address += MMU_PT_RANGE) {
     int flags = orig_pt->page[i] & 0xFFF;
     if (!(flags & PAGE_FLAG_PRESENT)) {
       continue;
     }
+
+    if (!maps) {
+      goto skip_checks;
+    }
+    // TODO: This is probably way too many instructions to perform for
+    // every single frame. This can absolutely be optimized.
+    bool should_copy_frame = true;
+    for (u64 j = 0;; j++) {
+      struct memory_mapping *map;
+      if (!list_memory_get(maps, j, &map)) {
+        break;
+      }
+      if (!map) {
+        continue;
+      }
+      if (!((map->address <= virtual_address) &&
+            ((uintptr_t)virtual_address <=
+             (uintptr_t)map->address + map->length))) {
+        continue;
+      }
+      if ((map->flags & MAP_ANONYMOUS) && !(map->flags & MAP_STACK)) {
+        should_copy_frame = false;
+        break;
+      }
+      if (map->flags & MAP_SHARED) {
+        should_copy_frame = false;
+        (*new_pt)->page[i] = orig_pt->page[i];
+        continue;
+      }
+      if ((map->flags & MAP_STACK)) {
+        should_copy_frame = true;
+      }
+    }
+    if (!should_copy_frame) {
+      continue;
+    }
+  skip_checks:
 
     (*new_pt)->page[i] = (uintptr_t)get_frame(true, 1) | flags;
     copy_frame((void *)((*new_pt)->page[i] & ~0xFFF), (void *)orig_pt->page[i]);
@@ -571,16 +606,18 @@ bool clone_pt(struct PT *orig_pt, struct PT **new_pt, void **physical) {
   return true;
 }
 
-bool clone_pdt(struct PDT *orig_pdt, struct PDT **new_pdt, void **physical) {
+bool clone_pdt(struct PDT *orig_pdt, struct PDT **new_pdt,
+               void *virtual_address, void **physical,
+               struct list_memory_ctx *maps) {
   *new_pdt = safe_allocation(sizeof(struct PDT), physical);
 
-  for (int i = 0; i < 512; i++) {
+  for (int i = 0; i < 512; i++, virtual_address += MMU_PT_RANGE) {
     int flags = orig_pdt->physical[i] & 0xFFF;
     if (!(flags & PAGE_FLAG_PRESENT)) {
       continue;
     }
-    assert(clone_pt(orig_pdt->pt[i], &((*new_pdt)->pt[i]),
-                    (void **)&((*new_pdt)->physical[i])));
+    assert(clone_pt(orig_pdt->pt[i], &((*new_pdt)->pt[i]), virtual_address,
+                    (void **)&((*new_pdt)->physical[i]), maps));
     (*new_pdt)->physical[i] |= flags;
   }
 
@@ -588,23 +625,25 @@ bool clone_pdt(struct PDT *orig_pdt, struct PDT **new_pdt, void **physical) {
 }
 
 bool clone_pdpt(struct PDPT *orig_pdpt, struct PDPT **new_pdpt,
-                void **physical) {
+                void *virtual_address, void **physical,
+                struct list_memory_ctx *maps) {
   *new_pdpt = safe_allocation(sizeof(struct PDPT), physical);
 
-  for (int i = 0; i < 512; i++) {
+  for (int i = 0; i < 512; i++, virtual_address += MMU_PDT_RANGE) {
     int flags = orig_pdpt->physical[i] & 0xFFF;
     if (!(flags & PAGE_FLAG_PRESENT)) {
       continue;
     }
-    assert(clone_pdt(orig_pdpt->pdt[i], &((*new_pdpt)->pdt[i]),
-                     (void **)&((*new_pdpt)->physical[i])));
+    assert(clone_pdt(orig_pdpt->pdt[i], &((*new_pdpt)->pdt[i]), virtual_address,
+                     (void **)&((*new_pdpt)->physical[i]), maps));
     (*new_pdpt)->physical[i] |= flags;
   }
 
   return true;
 }
 
-struct mmu_directory *mmu_clone_directory(struct mmu_directory *directory) {
+struct mmu_directory *mmu_clone_directory(struct mmu_directory *directory,
+                                          struct list_memory_ctx *maps) {
   struct mmu_directory *new_mmu_directory = ksbrk(sizeof(struct mmu_directory));
 
   void *physical;
@@ -612,7 +651,8 @@ struct mmu_directory *mmu_clone_directory(struct mmu_directory *directory) {
   new_mmu_directory->pml4t = pml4t;
   new_mmu_directory->physical = physical;
 
-  for (int i = 0; i < 511; i++) {
+  void *virtual_address = 0;
+  for (int i = 0; i < 511; i++, virtual_address += MMU_PDPT_RANGE) {
     if (active_bootstrap && 0 == i) {
       continue;
     }
@@ -621,7 +661,7 @@ struct mmu_directory *mmu_clone_directory(struct mmu_directory *directory) {
       continue;
     }
     assert(clone_pdpt(directory->pml4t->pdpt[i], &pml4t->pdpt[i],
-                      (void **)&pml4t->physical[i]));
+                      virtual_address, (void **)&pml4t->physical[i], maps));
     pml4t->physical[i] |= flags;
   }
 
@@ -647,6 +687,7 @@ void mmu_remove_identity(void) {
   struct mmu_directory *directory = mmu_get_active_directory();
   directory->pml4t->pdpt[0] = NULL;
   directory->pml4t->physical[0] = (uintptr_t)NULL;
+  active_bootstrap = false;
 }
 
 struct mmu_directory *mmu_get_active_directory(void) {
@@ -670,7 +711,8 @@ void mmu_init_for_new_core(void (*main)(void)) {
   // Set the directory now so we can do allocations
   mmu_set_directory(base_directory);
 
-  struct mmu_directory *new_directory = mmu_clone_directory(base_directory);
+  struct mmu_directory *new_directory =
+      mmu_clone_directory(base_directory, NULL);
   if (!new_directory) {
     assert(0);
     return;
@@ -769,7 +811,7 @@ int mmu_init(void *multiboot_header) {
 
   ksbrk(0x0);
   // FIXME: Shitty hack
-  for (size_t i = 0; i < 10; i++) {
+  for (size_t i = 0; i < 80; i++) {
     allocate_next_pt(heap_end + 0x1000 * 1024 * i,
                      MMU_FLAG_PRESENT | MMU_FLAG_RW);
   }

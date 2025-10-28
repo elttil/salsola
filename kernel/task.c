@@ -104,8 +104,10 @@ struct PML4T {
   struct PDPT *pdpt[512];
 };
 
+// NOTE: This function is called from the assembly function
+// `weird_switch` and therefore should not have its interface changed.
 void task_create_directory(struct task *task, struct task *parent) {
-  task->directory = mmu_clone_directory(parent->directory);
+  task->directory = mmu_clone_directory(parent->directory, &parent->mappings);
   task->tcb.cr3 = (u64)task->directory->physical;
 }
 
@@ -117,12 +119,19 @@ static err_t allocate(struct memory_mapping *map, void *addr, size_t length,
   // TODO: Handle prot
   (void)prot;
   (void)offset;
+  if (flags & MAP_STACK) {
+    if (!(flags & MAP_ANONYMOUS) || !(flags & MAP_PRIVATE)) {
+      return ERROR_MMAP_INVALID_FLAGS;
+    }
+    // NOTE: Fall through and performs the MAP_ANONYMOUS call.
+  }
+
   if (flags & MAP_ANONYMOUS) {
     void *ptr;
     TRY(mmu_setup_random_region(addr, length, true, true,
                                 MMU_FLAG_RW | MMU_FLAG_USER, &ptr));
     map->fd = NULL;
-    map->address = out;
+    map->address = ptr;
     map->length = length;
     if (out) {
       *out = ptr;
@@ -171,10 +180,16 @@ err_t task_mmap(void *addr, size_t length, int prot, int flags, int fd,
   return ERROR_SUCCESS;
 }
 
-static err_t setup_stack(void *stack_pointer, u64 stack_length, int argc,
-                         char **argv, void **result) {
-  TRY(mmu_allocate_region(stack_pointer - stack_length, stack_length,
-                          MMU_FLAG_RW | MMU_FLAG_USER));
+static err_t setup_stack(void **out, u64 stack_length, int argc, char **argv,
+                         void **result) {
+  void *stack_pointer;
+  TRY(task_mmap(NULL, stack_length, PROT_READ | PROT_WRITE,
+                MAP_STACK | MAP_ANONYMOUS | MAP_PRIVATE, -1, 0,
+                &stack_pointer));
+  stack_pointer = (void *)((uintptr_t)stack_pointer + stack_length);
+  if (out) {
+    *out = stack_pointer;
+  }
 
   uintptr_t ptr = (uintptr_t)stack_pointer;
 
@@ -227,18 +242,12 @@ void task_exec(struct sv file) {
     return;
   }
 
-  uintptr_t stack_diff = PAGE_SIZE * 10;
   uintptr_t stack_length = 0x5000;
-  void *stack_ptr = (void *)((uintptr_t)program_end +
-                             /*GUARD PAGE*/ stack_diff + stack_length);
-  stack_ptr = align_up_ptr(stack_ptr, PAGE_SIZE);
-  get_current_task()->program_stop = stack_ptr;
-  get_current_task()->program_stop += PAGE_SIZE; // Guard page
-
+  void *stack_ptr;
   char *p = SV_TO_C(file);
   char *argv[] = {p};
   assert(ERROR_SUCCESS ==
-         setup_stack(stack_ptr, stack_length, 1, argv, &stack_ptr));
+         setup_stack(&stack_ptr, stack_length, 1, argv, &stack_ptr));
   kfree(p);
 
   jump_usermode(entry, (void *)stack_ptr);
@@ -255,12 +264,15 @@ err_t task_fork(u64 *pid) {
   }
   task->pid = active_pid;
   active_pid++;
-  list_fd_init(&task->fds);
-  list_memory_init(&task->mappings);
+  list_fd_clone(&task->fds, &parent->fds);
+  list_memory_clone(&task->mappings, &parent->mappings);
 
   task->next = task_head;
   task_head = task;
 
+  // This function(written in assembly) fixes the execution context for
+  // the child. It also calls the function task_create_directory() to
+  // create a new directory.
   ASSIGN_PTR(pid, weird_switch(task, parent));
   return ERROR_SUCCESS;
 }

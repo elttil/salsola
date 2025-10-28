@@ -1,23 +1,27 @@
-#ifndef TASK_H
-#define TASK_H
-#include <error.h>
-#include <fs/vfs.h>
 #include <list.h>
-#include <mmu.h>
-#include <stdbool.h>
-#include <sv.h>
-#include <sys/types.h>
-#include <typedefs.h>
-
+#ifndef MEMORY_LIST_DEFINE
+#define MEMORY_LIST_DEFINE
 struct memory_mapping {
   struct vfs_fd *fd;
   void *address;
   size_t length;
   int flags;
 };
+DEFINE_LIST_STRUCT(list_memory, struct memory_mapping *)
+#endif
+
+#ifndef TASK_H
+#define TASK_H
+#include <error.h>
+#include <fs/vfs.h>
+#include <mmu.h>
+#include <stdbool.h>
+#include <sv.h>
+#include <sys/types.h>
+#include <task.h>
+#include <typedefs.h>
 
 DEFINE_LIST_STRUCT(list_fd, struct vfs_fd *)
-DEFINE_LIST_STRUCT(list_memory, struct memory_mapping *)
 
 struct tcb {
   u64 rsp;

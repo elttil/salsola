@@ -5,4 +5,6 @@
 #define SYS_MMAP 4
 #define SYS_RANDOMFILL 5
 #define SYS_LSEEK 6
+#define SYS_FSTAT 7
+#define SYS_FORK 8
 
