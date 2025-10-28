@@ -23,7 +23,8 @@
 
 volatile struct HBA_MEM *hba;
 
-const u16 num_prdt = 8;
+#define NUM_PRDT 8
+const u16 num_prdt = NUM_PRDT;
 
 struct mapping {
   void *src;
@@ -520,7 +521,7 @@ size_t ahci_read(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
   if (length % 512 != 0) {
     sector_count++;
   }
-  u8 tmp_buffer[512 * num_prdt];
+  u8 tmp_buffer[512 * NUM_PRDT];
   for (; sector_count >= num_prdt; lba++) {
     ahci_raw_read(&hba->ports[port], lba, 0, num_prdt, (u16 *)tmp_buffer);
     memcpy(buffer, tmp_buffer + offset, 512 * num_prdt);

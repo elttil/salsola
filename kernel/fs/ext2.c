@@ -280,7 +280,8 @@ static bool find_inode_in_directory(struct ext2_ctx *ctx, u32 directory_inode,
   u64 file_size;
   (void)read_inode(ctx, directory_inode, NULL, 0, 0, &file_size);
   u64 allocation_size = file_size;
-  u8 data[allocation_size];
+  // TODO: Maybe read block by block when searching
+  u8 *data = kmalloc(allocation_size);
   (void)read_inode(ctx, directory_inode, data, allocation_size, 0, NULL);
 
   direntry_header_t *dir;
@@ -308,9 +309,11 @@ static bool find_inode_in_directory(struct ext2_ctx *ctx, u32 directory_inode,
       if (inode) {
         *inode = dir->inode;
       }
+      kfree(data);
       return true;
     }
   }
+  kfree(data);
   return false;
 }
 
@@ -370,6 +373,7 @@ static int get_free_blocks(struct ext2_ctx *ctx, bool allocate, int entries[],
     return 0;
   }
   assert(0 == ctx->superblock.num_blocks_group % 8);
+  u8 *bitmap = kmalloc((ctx->superblock.num_blocks_group) / 8);
   for (u32 group = 0;
        group < num_block_groups(ctx) && current_entry < num_entries; group++) {
     get_group_descriptor(ctx, group, &block_group);
@@ -378,7 +382,6 @@ static int get_free_blocks(struct ext2_ctx *ctx, bool allocate, int entries[],
       continue;
     }
 
-    u8 bitmap[(ctx->superblock.num_blocks_group) / 8];
     read_block(ctx, block_group.block_usage_bitmap, bitmap,
                (ctx->superblock.num_blocks_group) / 8, 0);
     int found_block = 0;
@@ -410,6 +413,7 @@ static int get_free_blocks(struct ext2_ctx *ctx, bool allocate, int entries[],
       ctx->superblock_changed = 1;
     }
   }
+  kfree(bitmap);
   return current_entry;
 }
 
@@ -427,15 +431,21 @@ static void write_inode_header(struct ext2_ctx *ctx, int inode_index,
   u32 block_offset;
   get_block_containing_inode(ctx, inode_index, &block_index, &block_offset);
 
-  // TODO: If it is the first time we are writing to a inode header
-  // we should make sure that extra attributes of the inode
-  // datastructure are 0 by default. (ctx->inode_size may be larger than
-  // inode_t) Maybe there is a better solution to this as opposed to
-  // using a VLA.
-  u8 mem_block[ctx->inode_size];
-  memset(mem_block, 0, ctx->inode_size);
-  memcpy(mem_block, data, sizeof(inode_t));
-  write_block(ctx, block_index, mem_block, ctx->inode_size, block_offset);
+  size_t amount = 0;
+  size_t left = ctx->inode_size;
+  write_block(ctx, block_index, data, sizeof(inode_t), block_offset);
+  amount += sizeof(inode_t);
+  left -= sizeof(inode_t);
+
+  // NOTE: I hate this
+  u8 zero[128];
+  memset(zero, 0, sizeof(zero));
+  for (; left > 0;) {
+    size_t amt = min(sizeof(zero), left);
+    write_block(ctx, block_index, zero, amt, block_offset + amount);
+    amount += amt;
+    left -= amt;
+  }
 }
 
 static int write_inode(struct ext2_ctx *ctx, int inode_num, const void *data,
@@ -463,10 +473,18 @@ static int write_inode(struct ext2_ctx *ctx, int inode_num, const void *data,
 
   u32 delta = num_blocks_required - num_blocks_used;
   if (delta > 0) {
-    int blocks[delta];
-    get_free_blocks(ctx, true, blocks, delta);
-    for (u32 i = num_blocks_used; i < num_blocks_required; i++) {
-      assert(allocate_block(ctx, &inode, i, blocks[i - num_blocks_used]));
+    u32 left = delta;
+    u32 written = 0;
+    for (; left > 0;) {
+      int blocks[32];
+      u32 amt = min(32, left);
+      get_free_blocks(ctx, true, blocks, amt);
+      for (u32 i = 0; i < amt; i++) {
+        assert(allocate_block(ctx, &inode, num_blocks_used + written + i,
+                              blocks[i]));
+      }
+      left -= amt;
+      written += amt;
     }
   }
 
@@ -603,6 +621,9 @@ struct vfs_mount *ext2_create(struct vfs_fd *fd) {
   }
   ctx->fd = fd;
   ctx->superblock_changed = false;
+  for (int i = 0; i < EXT2_NUM_CACHE; i++) {
+    ctx->cache[i].in_use = false;
+  }
 
   mount->open = ext2_open;
   mount->internal_object = (void *)ctx;
