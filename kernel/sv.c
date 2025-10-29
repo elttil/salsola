@@ -12,12 +12,12 @@ struct sv sv_init(const char *s, size_t length) {
   return (struct sv){.s = s, .length = length};
 }
 
-// char *SV_TO_C(struct sv s) {
-//   char *c_string = kmalloc(s.length + 1);
-//   memcpy(c_string, s.s, s.length);
-//   c_string[s.length] = '\0';
-//   return c_string;
-// }
+char *SV_TO_C(struct sv s) {
+  char *c_string = kmalloc(s.length + 1);
+  memcpy(c_string, s.s, s.length);
+  c_string[s.length] = '\0';
+  return c_string;
+}
 
 size_t sv_to_cstring_buffer(struct sv s, char *buffer, size_t length) {
   if (0 == length || length - 1 < s.length) {
