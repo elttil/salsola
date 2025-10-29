@@ -29,6 +29,7 @@ struct vfs_mount *vfs_find_mount(struct sv path) {
 
 size_t vfs_pread(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
                  err_t *err) {
+  ASSIGN_PTR(err, ERROR_SUCCESS);
   if (!fd) {
     ASSIGN_PTR(err, ERROR_INVALID_FD);
     return 0;
@@ -41,6 +42,7 @@ size_t vfs_pread(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
 }
 
 size_t vfs_read(struct vfs_fd *fd, void *buffer, size_t length, err_t *err) {
+  ASSIGN_PTR(err, ERROR_SUCCESS);
   size_t r = vfs_pread(fd, buffer, length, fd->offset, err);
   fd->offset += r;
   return r;
@@ -48,6 +50,7 @@ size_t vfs_read(struct vfs_fd *fd, void *buffer, size_t length, err_t *err) {
 
 size_t vfs_pwrite(struct vfs_fd *fd, const void *buffer, size_t length,
                   size_t offset, err_t *err) {
+  ASSIGN_PTR(err, ERROR_SUCCESS);
   if (!fd) {
     ASSIGN_PTR(err, ERROR_INVALID_FD);
     return 0;
@@ -61,6 +64,7 @@ size_t vfs_pwrite(struct vfs_fd *fd, const void *buffer, size_t length,
 
 size_t vfs_write(struct vfs_fd *fd, const void *buffer, size_t length,
                  err_t *err) {
+  ASSIGN_PTR(err, ERROR_SUCCESS);
   size_t r = vfs_pwrite(fd, buffer, length, fd->offset, err);
   fd->offset += r;
   return r;
@@ -121,6 +125,7 @@ void vfs_close(struct vfs_fd *fd) {
 }
 
 struct vfs_fd *vfs_open(struct sv file, int flags, err_t *err) {
+  ASSIGN_PTR(err, ERROR_SUCCESS);
   struct vfs_mount *mount = vfs_find_mount(file);
   assert(mount); // TODO
   assert(mount->open);
