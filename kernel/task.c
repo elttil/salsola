@@ -37,6 +37,7 @@ bool task_init(void) {
   if (!task_head) {
     return false;
   }
+  task_head->parent = NULL;
   task_head->next = NULL;
   task_head->pid = active_pid;
   list_fd_init(&task_head->fds);
@@ -149,13 +150,50 @@ static err_t allocate(struct memory_mapping *map, void *addr, size_t length,
   return ERROR_SUCCESS;
 }
 
+err_t raw_task_munmap(struct memory_mapping *map) {
+  void *address = map->address;
+  size_t length = map->length;
+  bool deallocate = false;
+
+  map->refs--;
+  if (0 == map->refs) {
+    deallocate = true;
+    kfree(map);
+  }
+  mmu_unmap_frames(address, length, deallocate);
+  return ERROR_SUCCESS;
+}
+
+err_t task_munmap(void *addr, size_t length) {
+  // TODO: Does length really matter? Should mmaps be able to overlap?
+  (void)length;
+  struct list_memory_ctx *maps = &get_current_task()->mappings;
+  for (u64 j = 0;; j++) {
+    struct memory_mapping *map;
+    if (!list_memory_get(maps, j, &map)) {
+      break;
+    }
+    if (!map) {
+      continue;
+    }
+    if (map->address <= addr &&
+        addr <= (void *)((u8 *)map->address + map->length)) {
+      list_memory_set(maps, j, NULL);
+      raw_task_munmap(map);
+      return ERROR_SUCCESS;
+    }
+  }
+  return ERROR_MMAP_INVALID_MAP;
+}
+
 err_t task_mmap(void *addr, size_t length, int prot, int flags, int fd,
                 off_t offset, void **out) {
   struct memory_mapping *map = kmalloc(sizeof(struct memory_mapping));
-
   if (!map) {
     return ERROR_NO_MEMORY;
   }
+
+  map->refs = 1;
 
   u64 index;
   err_t rc;
@@ -174,8 +212,8 @@ err_t task_mmap(void *addr, size_t length, int prot, int flags, int fd,
   return ERROR_SUCCESS;
 }
 
-static err_t setup_stack(void **out, u64 stack_length, int argc, char **argv,
-                         void **result) {
+static err_t setup_stack(void **out, u64 stack_length, struct sv *args,
+                         u32 num_of_args, void **result) {
   void *stack_pointer;
   TRY(task_mmap(NULL, stack_length, PROT_READ | PROT_WRITE,
                 MAP_STACK | MAP_ANONYMOUS | MAP_PRIVATE, -1, 0,
@@ -187,10 +225,10 @@ static err_t setup_stack(void **out, u64 stack_length, int argc, char **argv,
 
   uintptr_t ptr = (uintptr_t)stack_pointer;
 
-  char *argv_ptrs[argc + 1];
-  for (int i = 0; i < argc; i++) {
-    char *s = argv[i];
-    size_t l = strlen(s);
+  char **argv_ptrs = kallocarray(sizeof(char *), num_of_args + 1);
+  for (u32 i = 0; i < num_of_args; i++) {
+    const char *s = sv_buffer(args[i]);
+    size_t l = sv_length(args[i]);
     ptr -= l + 1;
     char *b = (char *)ptr;
     memcpy(b, s, l);
@@ -198,11 +236,11 @@ static err_t setup_stack(void **out, u64 stack_length, int argc, char **argv,
     argv_ptrs[i] = b;
   }
 
-  char **ptrs[argc + 1];
-  for (int i = argc; i >= 0; i--) {
+  char ***ptrs = kallocarray(sizeof(char **), num_of_args + 1);
+  for (u32 i = num_of_args; i > 0; i--) {
     ptr -= sizeof(char *);
     ptrs[i] = (char **)ptr;
-    if (i != argc) {
+    if (i != num_of_args) {
       *(ptrs[i]) = argv_ptrs[i];
     } else {
       *(ptrs[i]) = NULL;
@@ -220,16 +258,31 @@ static err_t setup_stack(void **out, u64 stack_length, int argc, char **argv,
   *(char ***)ptr = (char **)s;
 
   ptr -= sizeof(u64);
-  *(int *)ptr = argc;
+  *(int *)ptr = num_of_args;
 
   if (result) {
     *result = (void *)ptr;
   }
+  kfree(argv_ptrs);
+  kfree(ptrs);
   return ERROR_SUCCESS;
 }
 
-void task_exec(struct sv file) {
-  // TODO: Deallocate userland
+void task_exec(struct sv file, struct sv *args, u32 num_of_args) {
+  struct list_memory_ctx *maps = &get_current_task()->mappings;
+  for (u64 j = 0;; j++) {
+    struct memory_mapping *map;
+    if (!list_memory_get(maps, j, &map)) {
+      break;
+    }
+    if (!map) {
+      continue;
+    }
+    raw_task_munmap(map);
+  }
+
+  mmu_unmap_frames(0, 0xF000000000, true);
+
   void *program_end;
   void *entry = elf_load_file(file, &program_end);
   if (!entry) {
@@ -238,11 +291,8 @@ void task_exec(struct sv file) {
 
   uintptr_t stack_length = 0x5000;
   void *stack_ptr;
-  char *p = SV_TO_C(file);
-  char *argv[] = {p};
   assert(ERROR_SUCCESS ==
-         setup_stack(&stack_ptr, stack_length, 1, argv, &stack_ptr));
-  kfree(p);
+         setup_stack(&stack_ptr, stack_length, args, num_of_args, &stack_ptr));
 
   jump_usermode(entry, (void *)stack_ptr);
   assert(0);
@@ -256,10 +306,30 @@ err_t task_fork(u64 *pid) {
   if (!task) {
     return ERROR_NO_MEMORY;
   }
+
+  task->parent = parent;
+
   task->pid = active_pid;
   active_pid++;
   list_fd_clone(&task->fds, &parent->fds);
   list_memory_clone(&task->mappings, &parent->mappings);
+  // TODO: Have a separate function for this
+  for (u64 i = 0; i < task->mappings.length; i++) {
+    struct memory_mapping *map;
+    assert(list_memory_get(&task->mappings, i, &map));
+    if (!map) {
+      continue;
+    }
+    map->refs++;
+  }
+  for (u64 i = 0; i < task->fds.length; i++) {
+    struct vfs_fd *fd;
+    assert(list_fd_get(&task->fds, i, &fd));
+    if (!fd) {
+      continue;
+    }
+    fd->outside_references++;
+  }
 
   task->next = task_head;
   task_head = task;

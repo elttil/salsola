@@ -6,6 +6,7 @@ struct memory_mapping {
   void *address;
   size_t length;
   int flags;
+  u32 refs;
 };
 DEFINE_LIST_STRUCT(list_memory, struct memory_mapping *)
 #endif
@@ -37,13 +38,14 @@ struct task {
   struct list_fd_ctx fds;
   struct list_memory_ctx mappings;
   struct mmu_directory *directory;
+  struct task *parent;
   struct task *next;
 };
 
 bool task_init(void);
 err_t task_fork(u64 *pid);
 void task_legacy_switch(void);
-void task_exec(struct sv file);
+void task_exec(struct sv file, struct sv *args, u32 num_of_args);
 err_t task_fd_open(u64 *fd, struct sv path, int flags);
 err_t task_fd_write(u64 fd, const void *buffer, u64 count, u64 *out);
 err_t task_fd_read(u64 fd, void *buffer, u64 count, u64 *out);

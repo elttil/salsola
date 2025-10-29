@@ -25,6 +25,10 @@
        : (void *)((((uintptr_t)address) - ((uintptr_t)address % alignment)) +  \
                   ((uintptr_t)alignment)))
 
+#define align_next_ptr(address, alignment)                                     \
+  (void *)((((uintptr_t)address) - ((uintptr_t)address % alignment)) +         \
+           ((uintptr_t)alignment))
+
 #define PAGE_SIZE 0x1000
 
 struct PML4T;
@@ -44,16 +48,17 @@ struct mmu_directory *mmu_clone_directory(struct mmu_directory *directory,
                                           struct list_memory_ctx *maps);
 struct mmu_directory *mmu_get_active_directory(void);
 void mmu_set_directory(struct mmu_directory *directory);
-void mmu_unmap_frames(void *src, size_t length);
+void mmu_unmap_frames(void *src, u64 length, bool free_frames);
 void mmu_remove_identity(void);
 void mmu_init_for_new_core(void (*main)(void));
 bool mmu_allocate_region(void *address, size_t length, int flags);
 void mmu_lazy_set_directory(struct mmu_directory *directory);
-err_t mmu_get_user_sv(char *string, size_t length, struct sv *s);
+err_t mmu_get_user_sv(const char *string, size_t length, struct sv *s);
 err_t mmu_assign_user_ptr(void *dst, const void *src, size_t size);
 err_t mmu_verify_user_pointer(const void *ptr, u64 length);
 err_t mmu_setup_random_region(void *address, size_t length, bool is_userspace,
                               bool allocate, int flags, void **out);
 void *mmu_map_frames_to_region(void *src, size_t length, void *virtual,
                                int flags);
+err_t mmu_verify_user_c_string(const char *ptr, size_t *size);
 #endif // MMU_H

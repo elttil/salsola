@@ -59,7 +59,7 @@ uint64_t pow(uint64_t a, uint64_t b) {
   return r;
 }
 
-err_t mmu_get_user_sv(char *string, size_t length, struct sv *s) {
+err_t mmu_get_user_sv(const char *string, size_t length, struct sv *s) {
   // TODO: Validate the string
   PTR_ASSIGN(s, sv_init(string, length));
   return ERROR_SUCCESS;
@@ -75,6 +75,12 @@ err_t mmu_verify_user_pointer(const void *ptr, u64 length) {
   (void)ptr;
   (void)length;
   // TODO: Validate user pointer
+  return ERROR_SUCCESS;
+}
+
+err_t mmu_verify_user_c_string(const char *ptr, size_t *size) {
+  (void)ptr;
+  (void)size;
   return ERROR_SUCCESS;
 }
 
@@ -154,7 +160,6 @@ bool mmu_is_region_free(void *address, size_t length) {
 void *mmu_find_free_virtual_region(size_t length) {
   for (size_t offset = 0;; offset += PAGE_SIZE) {
     if (mmu_is_region_free((void *)((uintptr_t)heap_end + offset), length)) {
-
       void *r = (void *)((uintptr_t)heap_end + offset);
       if (PAGE_SIZE == length) {
         heap_end = (void *)((uintptr_t)heap_end + offset + length);
@@ -197,7 +202,7 @@ void *mmu_map_frames(void *src, size_t length) {
   return virtual;
 }
 
-uintptr_t *get_page(void *src) {
+static uintptr_t *get_page(void *src, void **next) {
   uintptr_t address = (uintptr_t)src;
   const int PT_SHIFT = 12;
   const int PDT_SHIFT = 12 + 9 * 1;
@@ -211,17 +216,43 @@ uintptr_t *get_page(void *src) {
 
   struct mmu_directory *directory = mmu_get_active_directory();
 
+  if (!(directory->pml4t->physical[pml4t_index] & MMU_FLAG_PRESENT)) {
+    ASSIGN_PTR(next, align_next_ptr(src, MMU_PDPT_RANGE));
+    return NULL;
+  }
+
+  if (!(directory->pml4t->pdpt[pml4t_index]->physical[pdpt_index] &
+        MMU_FLAG_PRESENT)) {
+    ASSIGN_PTR(next, align_next_ptr(src, MMU_PDT_RANGE));
+    return NULL;
+  }
+
+  if (!(directory->pml4t->pdpt[pml4t_index]
+            ->pdt[pdpt_index]
+            ->physical[pdt_index] &
+        MMU_FLAG_PRESENT)) {
+    ASSIGN_PTR(next, align_next_ptr(src, MMU_PT_RANGE));
+    return NULL;
+  }
+
+  ASSIGN_PTR(next, align_next_ptr(src, MMU_PAGE_RANGE));
   return &directory->pml4t->pdpt[pml4t_index]
               ->pdt[pdpt_index]
               ->pt[pdt_index]
               ->page[pt_index];
 }
 
-void mmu_unmap_frames(void *src, size_t length) {
-  uintptr_t p = (uintptr_t)src;
-  for (size_t i = 0; i < length; i += PAGE_SIZE) {
-    uintptr_t *page = get_page((void *)(p + i));
-    assert(page);
+void mmu_unmap_frames(void *src, u64 length, bool free_frames) {
+  void *p = src;
+  void *end = (void *)((uintptr_t)src + length);
+  for (; p < end;) {
+    uintptr_t *page = get_page(p, &p);
+    if (!page) {
+      continue;
+    }
+    if (free_frames) {
+      set_frame((void *)*page, false);
+    }
     *page = (uintptr_t)NULL;
   }
   // FIXME: Possibly expensive operation that may be best to avoid
@@ -549,8 +580,8 @@ void copy_frame(void *physical_dst, void *physical_src) {
 
   memcpy(dst, src, PAGE_SIZE);
 
-  mmu_unmap_frames(dst, PAGE_SIZE);
-  mmu_unmap_frames(src, PAGE_SIZE);
+  mmu_unmap_frames(dst, PAGE_SIZE, false);
+  mmu_unmap_frames(src, PAGE_SIZE, false);
 }
 
 bool clone_pt(struct PT *orig_pt, struct PT **new_pt, void *virtual_address,
