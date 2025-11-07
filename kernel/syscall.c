@@ -70,6 +70,28 @@ err_t syscall_randomfill(void *buffer, uint32_t size) {
   return ERROR_SUCCESS;
 }
 
+err_t syscall_exec(const char *str, u32 length, char *args[], u32 arg_lengths[],
+                   u32 num_of_args) {
+  // TODO: Clone argv
+  struct sv f;
+  TRY(mmu_get_user_sv(str, length, &f));
+  struct sv file = sv_clone(f);
+
+  struct sv *new_args = kallocarray(num_of_args, sizeof(struct sv));
+  if (!new_args) {
+    return ERROR_NO_MEMORY;
+  }
+
+  for (u64 i = 0; i < num_of_args; i++) {
+    struct sv tmp;
+    TRY(mmu_get_user_sv(args[i], arg_lengths[i], &tmp));
+    new_args[i] = sv_clone(tmp);
+  }
+
+  task_exec(file, new_args, num_of_args);
+  return ERROR_SUCCESS;
+}
+
 err_t syscall_mmap(void *addr, size_t length, int prot, int flags, int fd,
                    off_t offset, void **out) {
   // NOTE: task_mmap has to ensure that addr can not be used in a
@@ -121,6 +143,9 @@ u64 syscall_handler(const struct syscall_arguments *regs) {
     return syscall_fstat(args[0], (void *)args[1]);
   case SYS_FORK:
     return syscall_fork((void *)args[0]);
+  case SYS_EXEC:
+    return syscall_exec((void *)args[0], args[1], (void *)args[2],
+                        (void *)args[3], args[4]);
   default:
     assert(0);
     break;
