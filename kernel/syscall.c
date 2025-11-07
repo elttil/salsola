@@ -117,6 +117,10 @@ err_t syscall_fork(pid_t *pid) {
   return err;
 }
 
+err_t syscall_dup2(u64 oldfd, u64 newfd) {
+  return task_fd_dup2(oldfd, newfd);
+}
+
 u64 syscall_handler(const struct syscall_arguments *regs) {
   u64 syscall = regs->rdi;
   const u64 args[7] = {regs->rsi, regs->rdx, regs->rbx, regs->r8,
@@ -146,6 +150,8 @@ u64 syscall_handler(const struct syscall_arguments *regs) {
   case SYS_EXEC:
     return syscall_exec((void *)args[0], args[1], (void *)args[2],
                         (void *)args[3], args[4]);
+  case SYS_DUP2:
+    return syscall_dup2(args[0], args[1]);
   default:
     assert(0);
     break;

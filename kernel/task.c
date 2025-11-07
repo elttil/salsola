@@ -51,6 +51,25 @@ bool task_init(void) {
   return true;
 }
 
+err_t task_fd_dup2(u64 oldfd, u64 newfd) {
+  if (oldfd == newfd) {
+    return ERROR_SUCCESS;
+  }
+
+  struct task *task = get_current_task();
+
+  struct vfs_fd *fd_ptr;
+  GET_FD(oldfd, &fd_ptr);
+
+  (void)task_fd_close(newfd);
+
+  // TODO: Maybe don't do the task_fd_close if this fails?
+  TRY(list_fd_set(&task->fds, newfd, fd_ptr));
+
+  fd_ptr->outside_references++;
+  return ERROR_SUCCESS;
+}
+
 err_t task_fd_open(u64 *fd, struct sv path, int flags) {
   err_t err;
   struct vfs_fd *fd_ptr = vfs_open(path, flags, &err);

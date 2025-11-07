@@ -7,4 +7,5 @@
 #define SYS_LSEEK 6
 #define SYS_FSTAT 7
 #define SYS_FORK 8
-
+#define SYS_EXEC 9
+#define SYS_DUP2 10

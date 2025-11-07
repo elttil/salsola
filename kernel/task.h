@@ -54,4 +54,5 @@ void *task_sbrk(uintptr_t increment);
 err_t task_lseek(u64 fd, off_t offset, int whence, off_t *out);
 err_t task_mmap(void *addr, size_t length, int prot, int flags, int fd,
                 off_t offset, void **out);
+err_t task_fd_dup2(u64 oldfd, u64 newfd);
 #endif // TASK_H
