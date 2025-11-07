@@ -14,7 +14,13 @@
 #define F_SETFL 1
 
 #ifndef KERNEL
+#include <error.h>
+#include <sys/types.h>
+#include <tb/sv.h>
+
 int open(const char *file, int flags, ...);
 int open_process(int pid);
 int fcntl(int fd, int cmd, ...);
+
+err_t sa_open(int *fd, struct sv path, int flags, mode_t mode);
 #endif
