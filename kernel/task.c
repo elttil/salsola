@@ -3,6 +3,7 @@
 #include <arch/amd64/task_switch.h>
 #include <assert.h>
 #include <elf.h>
+#include <fs/pipe.h>
 #include <kmalloc.h>
 #include <kprintf.h>
 #include <log.h>
@@ -67,6 +68,24 @@ err_t task_fd_dup2(u64 oldfd, u64 newfd) {
   TRY(list_fd_set(&task->fds, newfd, fd_ptr));
 
   fd_ptr->outside_references++;
+  return ERROR_SUCCESS;
+}
+
+err_t task_fd_pipe(u64 fd[2]) {
+  struct vfs_fd *fds[2];
+  TRY(pipe(fds));
+
+  if (!list_fd_add(&get_current_task()->fds, fds[0], &fd[0])) {
+    vfs_close(fds[0]);
+    vfs_close(fds[1]);
+    return ERROR_NO_MEMORY;
+  }
+  if (!list_fd_add(&get_current_task()->fds, fds[1], &fd[1])) {
+    // TODO: Cleanup previous fd
+    vfs_close(fds[0]);
+    vfs_close(fds[1]);
+    return ERROR_NO_MEMORY;
+  }
   return ERROR_SUCCESS;
 }
 

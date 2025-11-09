@@ -37,6 +37,7 @@ char *c_files[] = {
     "sv.c",
     "ctype.c",
     "fs/vfs.c",
+    "fs/pipe.c",
     "fs/ramfs.c",
     "arch/amd64/apic.c",
     "arch/amd64/smp.c",

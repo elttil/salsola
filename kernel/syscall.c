@@ -121,6 +121,12 @@ err_t syscall_dup2(u64 oldfd, u64 newfd) {
   return task_fd_dup2(oldfd, newfd);
 }
 
+err_t syscall_pipe(u64 fds[2]) {
+  // TODO: Maybe add a mmu_verified_memcpy function.
+  TRY(mmu_verify_user_pointer(fds, sizeof(u64[2])));
+  return task_fd_pipe(fds);
+}
+
 u64 syscall_handler(const struct syscall_arguments *regs) {
   u64 syscall = regs->rdi;
   const u64 args[7] = {regs->rsi, regs->rdx, regs->rbx, regs->r8,
@@ -152,6 +158,8 @@ u64 syscall_handler(const struct syscall_arguments *regs) {
                         (void *)args[3], args[4]);
   case SYS_DUP2:
     return syscall_dup2(args[0], args[1]);
+  case SYS_PIPE:
+    return syscall_pipe((void *)args[0]);
   default:
     assert(0);
     break;
