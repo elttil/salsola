@@ -7,6 +7,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <typedefs.h>
+#include <sb.h>
 
 #define TAB_SIZE 8
 
@@ -393,6 +394,29 @@ int kprintf(const char *format, ...) {
   va_list list;
   va_start(list, format);
   int rc = vkprintf(format, list);
+  va_end(list);
+  return rc;
+}
+
+void sb_write(struct print_context *_ctx, const char *s, int l) {
+  struct sb *ctx = (struct sb *)_ctx->data;
+  assert(ctx);
+  sb_append_buffer(ctx, s, l);
+}
+
+int vksbprintf(struct sb *ctx, const char *format, va_list ap) {
+  struct print_context context;
+
+  context.data = ctx;
+  context.write = sb_write;
+
+  return vkcprintf(&context, format, ap);
+}
+
+int ksbprintf(struct sb *ctx, const char *format, ...) {
+  va_list list;
+  va_start(list, format);
+  int rc = vksbprintf(ctx, format, list);
   va_end(list);
   return rc;
 }

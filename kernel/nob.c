@@ -11,6 +11,8 @@ char *asm_files[] = {
 };
 
 char *c_files[] = {
+    "timer.c",
+    "sb.c",
     "buffer.c",
     "arch/amd64/smap.c",
     "arch/amd64/hwrng.c",
@@ -310,7 +312,9 @@ int main(int argc, char **argv) {
     assert(0 == build_asm_file(asm_files[i], object_output, &procs));
     nob_da_append(&objects, object_output);
   }
-  nob_procs_wait(procs);
+  if (!nob_procs_wait(procs)) {
+    return 1;
+  }
 
   format_files(&changed_files, &procs);
 

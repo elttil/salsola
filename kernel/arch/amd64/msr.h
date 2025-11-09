@@ -77,3 +77,4 @@ void msr_set(u32 msr, u64 value);
 u64 rdtsc(void);
 void cpuid(u32 eax, struct cpuid_values *values);
 u64 msr_is_available(void);
+u64 tsc_get_hz(void);
