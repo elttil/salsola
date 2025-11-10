@@ -486,9 +486,25 @@ static bool check_virtual_region_is_free(void *address, void **physical,
 
   bool region_exists = true;
 
-  allocate_pt(pml4t_index, pdpt_index, pdt_index, flags);
-
   struct mmu_directory *directory = mmu_get_active_directory();
+  if (allocate) {
+    allocate_pt(pml4t_index, pdpt_index, pdt_index, flags);
+  } else {
+    if (!(directory->pml4t->physical[pml4t_index] & PAGE_FLAG_PRESENT)) {
+      return true;
+    }
+    if (!(directory->pml4t->pdpt[pml4t_index]->physical[pdpt_index] &
+          PAGE_FLAG_PRESENT)) {
+      return true;
+    }
+    if (!(directory->pml4t->pdpt[pml4t_index]
+              ->pdt[pdpt_index]
+              ->physical[pdt_index] &
+          PAGE_FLAG_PRESENT)) {
+      return true;
+    }
+  }
+
   void **p = (void **)&directory->pml4t->pdpt[pml4t_index]
                  ->pdt[pdpt_index]
                  ->pt[pdt_index]
@@ -838,7 +854,6 @@ int mmu_init(void *multiboot_header) {
   }
   set_frame(&PML4T, true);
 
-  ksbrk(0x0);
   // FIXME: Shitty hack
   for (size_t i = 0; i < 80; i++) {
     allocate_next_pt(heap_end + 0x1000 * 1024 * i,
