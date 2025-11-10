@@ -375,7 +375,8 @@ err_t task_fork(u64 *pid) {
   // This function(written in assembly) fixes the execution context for
   // the child. It also calls the function task_create_directory() to
   // create a new directory.
-  ASSIGN_PTR(pid, weird_switch(task, parent));
+  u64 _pid = weird_switch(task, parent);
+  ASSIGN_PTR(pid, _pid);
   return ERROR_SUCCESS;
 }
 
