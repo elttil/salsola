@@ -9,3 +9,4 @@
 #define SYS_FORK 8
 #define SYS_EXEC 9
 #define SYS_DUP2 10
+#define SYS_PIPE 11
