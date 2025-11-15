@@ -13,6 +13,8 @@
   void prefix##_init(struct prefix##_ctx *ctx);                                \
   void prefix##_free(struct prefix##_ctx *ctx);                                \
   bool prefix##_add(struct prefix##_ctx *ctx, type value, u64 *index);         \
+  bool prefix##_add_or_replace_previous_null(struct prefix##_ctx *ctx,         \
+                                             type value, u64 *index);          \
   bool prefix##_get(const struct prefix##_ctx *ctx, u64 index, type *value);   \
   bool prefix##_clone(struct prefix##_ctx *ctx,                                \
                       const struct prefix##_ctx *source);                      \
@@ -38,16 +40,22 @@
     ctx->capacity = 0;                                                         \
   }                                                                            \
                                                                                \
+  static bool prefix##_increase_size(struct prefix##_ctx *ctx, u64 increase) { \
+    u64 new_capacity = ctx->capacity + increase;                               \
+    void *new_allocation = krecalloc(ctx->items, new_capacity, sizeof(type));  \
+    if (!new_allocation) {                                                     \
+      return false;                                                            \
+    }                                                                          \
+    ctx->items = new_allocation;                                               \
+    ctx->capacity += new_capacity;                                             \
+    return true;                                                               \
+  }                                                                            \
+                                                                               \
   bool prefix##_add(struct prefix##_ctx *ctx, type value, u64 *index) {        \
     if (ctx->length == ctx->capacity) {                                        \
-      u64 new_capacity = ctx->capacity + 128;                                  \
-      void *new_allocation =                                                   \
-          krecalloc(ctx->items, new_capacity, sizeof(type));               \
-      if (!new_allocation) {                                                   \
+      if (!prefix##_increase_size(ctx, 128)) {                                 \
         return false;                                                          \
       }                                                                        \
-      ctx->items = new_allocation;                                             \
-      ctx->capacity += new_capacity;                                           \
     }                                                                          \
     memcpy(ctx->items + ctx->length, &value, sizeof(type));                    \
     if (index) {                                                               \
@@ -92,10 +100,25 @@
     return false;                                                              \
   }                                                                            \
                                                                                \
+  bool prefix##_add_or_replace_previous_null(struct prefix##_ctx *ctx,         \
+                                             type value, u64 *index) {         \
+    for (u64 i = 0; i < ctx->length; i++) {                                    \
+      if (*(ctx->items + i) == NULL) {                                         \
+        if (index) {                                                           \
+          *index = i;                                                          \
+        }                                                                      \
+        return true;                                                           \
+      }                                                                        \
+    }                                                                          \
+    return prefix##_add(ctx, value, index);                                    \
+  }                                                                            \
+                                                                               \
   bool prefix##_set(struct prefix##_ctx *ctx, u64 index, type value) {         \
     if (index >= ctx->length) {                                                \
-      return false;                                                            \
+      if (!prefix##_increase_size(ctx, ctx->length - index + 128)) {           \
+        return false;                                                          \
+      }                                                                        \
     }                                                                          \
-    memcpy(&ctx->items + index, &value, sizeof(type));                         \
+    memcpy(ctx->items + index, &value, sizeof(type));                         \
     return true;                                                               \
   }

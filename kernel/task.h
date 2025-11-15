@@ -42,6 +42,14 @@ struct task {
   struct task *next;
 };
 
+#define GET_FD(a, b)                                                           \
+  if (!list_fd_get(&get_current_task()->fds, (a), (b))) {                      \
+    return ERROR_INVALID_FD;                                                   \
+  }                                                                            \
+  if (!(*(b))) {                                                               \
+    return ERROR_INVALID_FD;                                                   \
+  }
+
 bool task_init(void);
 err_t task_fork(u64 *pid);
 void task_legacy_switch(void);
@@ -56,4 +64,5 @@ err_t task_mmap(void *addr, size_t length, int prot, int flags, int fd,
                 off_t offset, void **out);
 err_t task_fd_dup2(u64 oldfd, u64 newfd);
 err_t task_fd_pipe(u64 fd[2]);
+struct task *get_current_task(void);
 #endif // TASK_H

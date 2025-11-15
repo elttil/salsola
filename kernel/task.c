@@ -21,17 +21,9 @@ static void set_current_task(struct task *task) {
   kernel_threads[core_id_get()].current_task = task;
 }
 
-static struct task *get_current_task(void) {
+struct task *get_current_task(void) {
   return kernel_threads[core_id_get()].current_task;
 }
-
-#define GET_FD(a, b)                                                           \
-  if (!list_fd_get(&get_current_task()->fds, (a), (b))) {                      \
-    return ERROR_INVALID_FD;                                                   \
-  }                                                                            \
-  if (!(*(b))) {                                                               \
-    return ERROR_INVALID_FD;                                                   \
-  }
 
 bool task_init(void) {
   task_head = kmalloc(sizeof(struct task));

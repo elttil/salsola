@@ -1,3 +1,4 @@
+#include <arch/amd64/msr.h>
 #include <assert.h>
 #include <drivers/ahci.h>
 #include <error.h>
@@ -631,6 +632,7 @@ struct vfs_fd *ext2_open(struct vfs_mount *mount, struct sv file, int flags,
   fd->lseek = ext2_lseek;
   fd->type = VFS_TYPE_FILE;
   fd->internal_object = (void *)inode_num;
+  list_listener_init(&fd->listeners);
 
   return fd;
 }

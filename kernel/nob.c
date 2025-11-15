@@ -11,6 +11,7 @@ char *asm_files[] = {
 };
 
 char *c_files[] = {
+    "kpoll.c",
     "timer.c",
     "sb.c",
     "buffer.c",
@@ -87,6 +88,7 @@ char *ld_flags[] = {
 
 char *c_flags[] = {
     "-std=c99",
+    "-DKERNEL",
     "-mcmodel=large",
     "-ffreestanding",
     "-Wall",

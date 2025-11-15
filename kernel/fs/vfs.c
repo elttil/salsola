@@ -27,6 +27,78 @@ struct vfs_mount *vfs_find_mount(struct sv path) {
   return longest;
 }
 
+static void vfs_notify_listeners(struct vfs_fd *fd) {
+  for (u64 i = 0;; i++) {
+    struct listener *listener;
+    if (!list_listener_get(&fd->listeners, i, &listener)) {
+      break;
+    }
+    if (!listener) {
+      continue;
+    }
+    if (listener->has_sent_update) {
+      continue;
+    }
+    bool update_read =
+        ((KEVENT_CAN_READ & listener->flags) && fd->data.can_read);
+    bool update_write =
+        ((KEVENT_CAN_WRITE & listener->flags) && fd->data.can_write);
+
+    if (!(update_read || update_write)) {
+      continue;
+    }
+
+    lock_acquire(&listener->lock);
+
+    struct kpoll *poll = listener->poll;
+    if (!poll) {
+      // TODO: Deallocate the listener at this point.
+      lock_release(&listener->lock);
+      continue;
+    }
+
+    lock_acquire(&poll->lock);
+    list_listener_add_or_replace_previous_null(&poll->updates, listener, NULL);
+    lock_release(&poll->lock);
+
+    listener->has_sent_update = true;
+
+    lock_release(&listener->lock);
+  }
+}
+
+err_t vfs_add_listener(struct vfs_fd *fd, struct listener *listener) {
+  TRY(list_listener_add(&fd->listeners, listener, NULL));
+
+  if (VFS_TYPE_BLOCK_DEVICE == fd->type) {
+    // The caller isn't(shouldn't be) listening to a block device for figuring
+    // out if it can read/write, but if they are then just always tell
+    // them they can read/write.
+    fd->data.can_read = true;
+    fd->data.can_write = true;
+  }
+
+  vfs_notify_listeners(fd);
+
+  return ERROR_SUCCESS;
+}
+
+void vfs_notify_can_read(struct vfs_fd *fd, bool can_read) {
+  fd->data.can_read = can_read;
+  if (!can_read) {
+    return;
+  }
+  vfs_notify_listeners(fd);
+}
+
+void vfs_notify_can_write(struct vfs_fd *fd, bool can_write) {
+  fd->data.can_write = can_write;
+  if (!can_write) {
+    return;
+  }
+  vfs_notify_listeners(fd);
+}
+
 size_t vfs_pread(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
                  err_t *err) {
   ASSIGN_PTR(err, ERROR_SUCCESS);

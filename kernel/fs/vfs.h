@@ -1,6 +1,7 @@
 #ifndef VFS_H
 #define VFS_H
 #include <error.h>
+#include <sys/kpoll.h>
 #include <stdbool.h>
 #include <sv.h>
 #include <sys/types.h>
@@ -23,6 +24,11 @@ struct vfs_mount {
   struct vfs_mount *next;
 };
 
+struct fd_data {
+  bool can_read;
+  bool can_write;
+};
+
 struct vfs_fd {
   size_t (*read)(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
                  err_t *err);
@@ -32,11 +38,17 @@ struct vfs_fd {
   err_t (*mmap)(struct vfs_fd *fd, void *addr, size_t length, int prot,
                 int flags, size_t offset, void **out);
 
+  // TODO: Add a lock
   int type;
+  u32 internal_object_type;
   void *internal_object;
   void (*close)(struct vfs_fd *fd);
 
   u32 outside_references;
+
+  struct list_listener_ctx listeners;
+
+  struct fd_data data;
 
   // Is set by the VFS, not the FS
   size_t offset;
@@ -58,5 +70,8 @@ err_t vfs_lseek(struct vfs_fd *fd, off_t offset, int whence, off_t *out);
 err_t vfs_mmap(struct vfs_fd *fd, void *addr, size_t length, int prot,
                int flags, size_t offset, void **out);
 void vfs_close(struct vfs_fd *fd);
+void vfs_notify_can_read(struct vfs_fd *fd, bool can_read);
+void vfs_notify_can_write(struct vfs_fd *fd, bool can_write);
+err_t vfs_add_listener(struct vfs_fd *fd, struct listener *listener);
 
 #endif // VFS_H

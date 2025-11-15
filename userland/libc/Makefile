@@ -12,7 +12,7 @@ UNISTD_OBJ=unistd/write.o unistd/close.o unistd/lseek.o unistd/sbrk.o unistd/rea
 MALLOC_OBJ=malloc/malloc.o
 MATH_OBJ=math/fmin.o math/ldexp.o math/sqrt.o math/fabs.o math/cos.o math/ceil.o math/acos.o math/pow.o math/fmod.o math/floor.o math/__math_oflow.o math/exp_data.o math/pow_data.o math/__cos.o math/__sin.o math/__rem_pio2.o math/__rem_pio2_large.o math/scalbn.o math/__math_uflow.o math/__math_xflow.o math/__math_invalid.o
 TB_OBJ=tb/sv.o tb/sb.o tb/sha1.o
-SYS_OBJ=sys/random/randomfill.o sys/random/sarandom.o sys/mman/mmap.o sys/stat/stat.o sys/stat/fstat.o
+SYS_OBJ=sys/random/randomfill.o sys/random/sarandom.o sys/mman/mmap.o sys/stat/stat.o sys/stat/fstat.o sys/kpoll.o
 
 CTYPE_OBJ=ctype/isalnum.o ctype/isblank.o ctype/isgraph.o ctype/ispunct.o ctype/isxdigit.o ctype/isalpha.o ctype/iscntrl.o ctype/islower.o ctype/isspace.o ctype/tolower.o ctype/isascii.o  ctype/isdigit.o  ctype/isprint.o  ctype/isupper.o  ctype/toupper.o
 

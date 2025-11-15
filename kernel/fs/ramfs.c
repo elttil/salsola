@@ -26,6 +26,7 @@ struct vfs_fd *ramfs_open(struct vfs_mount *mount, struct sv file, int flags,
   }
 
   struct vfs_fd *fd = kcalloc(1, sizeof(struct vfs_fd));
+  list_listener_init(&fd->listeners);
   fd->outside_references = 0;
   fd->close = NULL;
   fd->offset = 0;

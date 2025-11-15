@@ -127,6 +127,12 @@ err_t syscall_pipe(u64 fds[2]) {
   return task_fd_pipe(fds);
 }
 
+err_t syscall_kpoll(u64 fd, struct kevent *events, size_t nevents,
+                    size_t *nchanges) {
+  // TODO: DOES NOT CORRECTLY CHECK POINTERS.
+  return kpoll(fd, events, nevents, nchanges);
+}
+
 u64 syscall_handler(const struct syscall_arguments *regs) {
   u64 syscall = regs->rdi;
   const u64 args[7] = {regs->rsi, regs->rdx, regs->rbx, regs->r8,
@@ -160,6 +166,8 @@ u64 syscall_handler(const struct syscall_arguments *regs) {
     return syscall_dup2(args[0], args[1]);
   case SYS_PIPE:
     return syscall_pipe((void *)args[0]);
+  case SYS_KPOLL:
+    return syscall_kpoll(args[0], (void *)args[1], args[2], (void *)args[3]);
   default:
     assert(0);
     break;

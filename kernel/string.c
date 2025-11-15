@@ -1,3 +1,4 @@
+#include <kmalloc.h>
 #include <string.h>
 #include <typedefs.h>
 
@@ -77,4 +78,16 @@ int memcmp(const void *s1, const void *s2, size_t n) {
   }
 
   return return_value;
+}
+
+void *memmove(void *s1, const void *s2, size_t n) {
+  if (0 == n) {
+    return s1;
+  }
+  // FIXME: This is bad
+  char *tmp = kmalloc(n);
+  memcpy(tmp, s2, n);
+  memcpy(s1, tmp, n);
+  kfree(tmp);
+  return s1;
 }
