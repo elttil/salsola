@@ -619,20 +619,16 @@ struct vfs_fd *ext2_open(struct vfs_mount *mount, struct sv file, int flags,
     return NULL;
   }
 
-  struct vfs_fd *fd = kcalloc(1, sizeof(struct vfs_fd));
+  struct vfs_fd *fd = vfs_allocate_fd();
   if (!fd) {
     ASSIGN_PTR(err, ERROR_NO_MEMORY);
     return NULL;
   }
-  fd->outside_references = 0;
-  fd->close = NULL;
-  fd->offset = 0;
   fd->read = ext2_read;
   fd->write = ext2_write;
   fd->lseek = ext2_lseek;
   fd->type = VFS_TYPE_FILE;
   fd->internal_object = (void *)inode_num;
-  list_listener_init(&fd->listeners);
 
   return fd;
 }

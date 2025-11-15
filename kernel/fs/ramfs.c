@@ -25,15 +25,7 @@ struct vfs_fd *ramfs_open(struct vfs_mount *mount, struct sv file, int flags,
     return NULL;
   }
 
-  struct vfs_fd *fd = kcalloc(1, sizeof(struct vfs_fd));
-  list_listener_init(&fd->listeners);
-  fd->outside_references = 0;
-  fd->close = NULL;
-  fd->offset = 0;
-  fd->read = NULL;
-  fd->write = NULL;
-  fd->lseek = NULL;
-  fd->mmap = NULL;
+  struct vfs_fd *fd = vfs_allocate_fd();
 
   assert(p->open);
   assert(true == p->open(fd, file, flags, p->internal_object, err));

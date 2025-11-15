@@ -1,9 +1,9 @@
 #ifndef VFS_H
 #define VFS_H
 #include <error.h>
-#include <sys/kpoll.h>
 #include <stdbool.h>
 #include <sv.h>
+#include <sys/kpoll.h>
 #include <sys/types.h>
 
 #define SEEK_SET 0
@@ -56,6 +56,7 @@ struct vfs_fd {
 };
 
 bool vfs_init(void);
+struct vfs_fd *vfs_allocate_fd(void);
 struct vfs_fd *vfs_open(struct sv file, int flags, err_t *err);
 bool vfs_add_mount(struct sv path, struct vfs_mount *root);
 struct vfs_mount *vfs_find_mount(struct sv path);

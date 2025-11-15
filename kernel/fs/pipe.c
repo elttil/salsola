@@ -107,7 +107,7 @@ err_t pipe(struct vfs_fd *fd[2]) {
   lock_release(&p->lock);
 
   for (int i = 0; i < 2; i++) {
-    fd[i] = kcalloc(1, sizeof(struct vfs_fd));
+    fd[i] = vfs_allocate_fd();
     if (!fd[i]) {
       kfree(fd[i]);
       if (1 == i) {
@@ -120,7 +120,6 @@ err_t pipe(struct vfs_fd *fd[2]) {
     fd[i]->write = pipe_write;
     fd[i]->internal_object_type = (0 == i) ? PIPE_TYPE_FIRST : PIPE_TYPE_SECOND;
     fd[i]->internal_object = p;
-    list_listener_init(&fd[i]->listeners);
     p->references++;
   }
   p->fds[0] = fd[0];

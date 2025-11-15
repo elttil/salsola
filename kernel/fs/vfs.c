@@ -27,6 +27,12 @@ struct vfs_mount *vfs_find_mount(struct sv path) {
   return longest;
 }
 
+struct vfs_fd *vfs_allocate_fd(void) {
+  struct vfs_fd *fd = kcalloc(1, sizeof(struct vfs_fd));
+  list_listener_init(&fd->listeners);
+  return fd;
+}
+
 static void vfs_notify_listeners(struct vfs_fd *fd) {
   for (u64 i = 0;; i++) {
     struct listener *listener;
