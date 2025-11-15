@@ -44,7 +44,9 @@ size_t vfs_pread(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
 size_t vfs_read(struct vfs_fd *fd, void *buffer, size_t length, err_t *err) {
   ASSIGN_PTR(err, ERROR_SUCCESS);
   size_t r = vfs_pread(fd, buffer, length, fd->offset, err);
-  fd->offset += r;
+  if (VFS_TYPE_CHAR_DEVICE != fd->type) {
+    fd->offset += r;
+  }
   return r;
 }
 
@@ -66,7 +68,9 @@ size_t vfs_write(struct vfs_fd *fd, const void *buffer, size_t length,
                  err_t *err) {
   ASSIGN_PTR(err, ERROR_SUCCESS);
   size_t r = vfs_pwrite(fd, buffer, length, fd->offset, err);
-  fd->offset += r;
+  if (VFS_TYPE_CHAR_DEVICE != fd->type) {
+    fd->offset += r;
+  }
   return r;
 }
 
