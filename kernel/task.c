@@ -33,6 +33,7 @@ bool task_init(void) {
   task_head->parent = NULL;
   task_head->next = NULL;
   task_head->pid = active_pid;
+  task_head->active_kpoll = NULL;
   list_fd_init(&task_head->fds);
   list_memory_init(&task_head->mappings);
   active_pid++;
@@ -208,7 +209,7 @@ err_t task_munmap(void *addr, size_t length) {
     }
     if (map->address <= addr &&
         addr <= (void *)((u8 *)map->address + map->length)) {
-      list_memory_set(maps, j, NULL);
+      list_memory_remove(maps, j);
       raw_task_munmap(map);
       return ERROR_SUCCESS;
     }
@@ -236,7 +237,7 @@ err_t task_mmap(void *addr, size_t length, int prot, int flags, int fd,
   if (ERROR_SUCCESS !=
       (rc = allocate(map, addr, length, prot, flags, fd, offset, out))) {
     kfree(map);
-    list_memory_set(&get_current_task()->mappings, index, NULL);
+    list_memory_remove(&get_current_task()->mappings, index);
     return rc;
   }
   return ERROR_SUCCESS;
@@ -339,6 +340,9 @@ err_t task_fork(u64 *pid) {
 
   task->parent = parent;
 
+  hint_assert(!parent->active_kpoll);
+  task->active_kpoll = NULL;
+
   task->pid = active_pid;
   active_pid++;
   list_fd_clone(&task->fds, &parent->fds);
@@ -388,9 +392,25 @@ static struct task *task_next(struct task *task) {
   return task;
 }
 
+static bool is_halted(struct task *task) {
+  struct kpoll *kpoll = task->active_kpoll;
+  if (kpoll) {
+    lock_acquire(&kpoll->lock);
+    if (0 == list_listener_num_entries(&kpoll->updates)) {
+      lock_release(&kpoll->lock);
+      return true;
+    }
+    lock_release(&kpoll->lock);
+  }
+  return false;
+}
+
 void task_legacy_switch(void) {
   interrupts_disable();
-  struct task *new_task = task_next(get_current_task());
+  struct task *new_task = get_current_task();
+  do {
+    new_task = task_next(new_task);
+  } while (is_halted(new_task));
   if (new_task == get_current_task()) {
     return;
   }

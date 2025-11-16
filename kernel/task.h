@@ -18,6 +18,7 @@ DEFINE_LIST_STRUCT(list_memory, struct memory_mapping *)
 #include <mmu.h>
 #include <stdbool.h>
 #include <sv.h>
+#include <sys/kpoll.h>
 #include <sys/types.h>
 #include <task.h>
 #include <typedefs.h>
@@ -38,6 +39,7 @@ struct task {
   struct list_fd_ctx fds;
   struct list_memory_ctx mappings;
   struct mmu_directory *directory;
+  struct kpoll *active_kpoll;
   struct task *parent;
   struct task *next;
 };
