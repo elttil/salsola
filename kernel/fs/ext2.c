@@ -6,6 +6,7 @@
 #include <fs/vfs.h>
 #include <kmalloc.h>
 #include <kprintf.h>
+#include <lock.h>
 #include <log.h>
 #include <stdbool.h>
 #include <string.h>
@@ -34,6 +35,7 @@ struct ext2_block_cache {
 };
 
 struct ext2_ctx {
+  lock_t lock_ctx;
   struct vfs_fd *fd;
   union {
     struct ExtendedSuperblock superblock;
@@ -43,8 +45,10 @@ struct ext2_ctx {
   u32 inode_size;
   u32 inodes_per_block;
   bool superblock_changed;
+  lock_t lock_pre_allocated_block;
   void *pre_allocated_block;
   // TODO: Maybe allocate this differently
+  lock_t lock_cache;
   struct ext2_block_cache cache[EXT2_NUM_CACHE];
 };
 
@@ -212,6 +216,7 @@ static int allocate_block(struct ext2_ctx *ctx, inode_t *inode, u32 index,
 
 static void read_block(struct ext2_ctx *ctx, u32 block, void *address,
                        size_t size, size_t offset) {
+  lock_acquire(&ctx->lock_cache);
   bool reuse_cache = false;
 read_block_redo:
   int index = -1;
@@ -261,6 +266,8 @@ read_block_redo:
   memcpy(address, (u8 *)cache->buffer + offset, size);
 
   cache->last_usage = rdtsc();
+
+  lock_release(&ctx->lock_cache);
 }
 
 static void write_block(struct ext2_ctx *ctx, u32 block, const void *address,
@@ -342,6 +349,7 @@ static bool find_inode_in_directory(struct ext2_ctx *ctx, u32 directory_inode,
   }
 
   u64 file_size;
+  lock_acquire(&ctx->lock_pre_allocated_block);
   u8 *block = get_allocated_block(ctx);
   (void)read_inode(ctx, directory_inode, block, ctx->block_byte_size, 0,
                    &file_size);
@@ -386,9 +394,11 @@ static bool find_inode_in_directory(struct ext2_ctx *ctx, u32 directory_inode,
       if (inode) {
         *inode = dir->inode;
       }
+      lock_release(&ctx->lock_pre_allocated_block);
       return true;
     }
   }
+  lock_release(&ctx->lock_pre_allocated_block);
   return false;
 }
 
@@ -444,7 +454,9 @@ static int get_free_blocks(struct ext2_ctx *ctx, bool allocate, int entries[],
                            u32 num_entries) {
   u32 current_entry = 0;
   bgdt_t block_group;
+  lock_acquire(&ctx->lock_ctx);
   if (num_entries > ctx->superblock.num_blocks_unallocated) {
+    lock_release(&ctx->lock_ctx);
     return 0;
   }
   assert(0 == ctx->superblock.num_blocks_group % 8);
@@ -489,6 +501,7 @@ static int get_free_blocks(struct ext2_ctx *ctx, bool allocate, int entries[],
       ctx->superblock_changed = 1;
     }
   }
+  lock_release(&ctx->lock_ctx);
   return current_entry;
 }
 
@@ -689,6 +702,9 @@ struct vfs_mount *ext2_create(struct vfs_fd *fd) {
     kfree(mount);
     return NULL;
   }
+  lock_release(&ctx->lock_ctx);
+  lock_release(&ctx->lock_cache);
+  lock_release(&ctx->lock_pre_allocated_block);
 
   ctx->fd = fd;
   ctx->superblock_changed = false;
