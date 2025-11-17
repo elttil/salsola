@@ -43,6 +43,7 @@ struct ext2_ctx {
   u32 inode_size;
   u32 inodes_per_block;
   bool superblock_changed;
+  void *pre_allocated_block;
   // TODO: Maybe allocate this differently
   struct ext2_block_cache cache[EXT2_NUM_CACHE];
 };
@@ -52,6 +53,10 @@ static void read_block(struct ext2_ctx *ctx, u32 block, void *address,
 static void write_block(struct ext2_ctx *ctx, u32 block, const void *address,
                         size_t size, size_t offset);
 static int get_free_block(struct ext2_ctx *ctx, bool allocate);
+
+static void *get_allocated_block(struct ext2_ctx *ctx) {
+  return ctx->pre_allocated_block;
+}
 
 static u32 num_block_groups(struct ext2_ctx *ctx) {
   ext_superblock_t *superblock = &ctx->superblock;
@@ -207,13 +212,15 @@ static int allocate_block(struct ext2_ctx *ctx, inode_t *inode, u32 index,
 
 static void read_block(struct ext2_ctx *ctx, u32 block, void *address,
                        size_t size, size_t offset) {
+  bool reuse_cache = false;
+read_block_redo:
   int index = -1;
   u64 min_last_usage = ~((u64)0);
   for (int i = 0; i < EXT2_NUM_CACHE; i++) {
-    if (!ctx->cache[i].in_use) {
+    if (!ctx->cache[i].in_use && !reuse_cache) {
       min_last_usage = 0;
       index = i;
-      continue;
+      break;
     }
     if (block == ctx->cache[i].block_number) {
       index = i;
@@ -225,11 +232,19 @@ static void read_block(struct ext2_ctx *ctx, u32 block, void *address,
     }
   }
 
+  if (reuse_cache) {
+    assert(-1 != index);
+  }
+
   struct ext2_block_cache *cache = &ctx->cache[index];
 
   bool is_new = false;
   if (!cache->in_use) {
     cache->buffer = kmalloc(ctx->block_byte_size);
+    if (!cache->buffer) {
+      reuse_cache = true;
+      goto read_block_redo;
+    }
     cache->in_use = true;
     is_new = true;
   }
@@ -242,9 +257,6 @@ static void read_block(struct ext2_ctx *ctx, u32 block, void *address,
     cache->block_number = block;
   }
 
-  // kprintf("size: %d\n", size);
-  // kprintf("offset: %d\n", offset);
-  // kprintf("block_byte_size: %d\n", ctx->block_byte_size);
   assert(size + offset <= ctx->block_byte_size);
   memcpy(address, (u8 *)cache->buffer + offset, size);
 
@@ -330,19 +342,31 @@ static bool find_inode_in_directory(struct ext2_ctx *ctx, u32 directory_inode,
   }
 
   u64 file_size;
-  (void)read_inode(ctx, directory_inode, NULL, 0, 0, &file_size);
-  u64 allocation_size = file_size;
-  // TODO: Maybe read block by block when searching
-  u8 *data = kmalloc(allocation_size);
-  (void)read_inode(ctx, directory_inode, data, allocation_size, 0, NULL);
+  u8 *block = get_allocated_block(ctx);
+  (void)read_inode(ctx, directory_inode, block, ctx->block_byte_size, 0,
+                   &file_size);
 
   direntry_header_t *dir;
-  u8 *data_p = data;
-  u8 *data_end = data + allocation_size;
-  for (; data_p <= (data_end - sizeof(direntry_header_t)) &&
-         (dir = (direntry_header_t *)data_p)->inode;
-       data_p += dir->size) {
-    if (0 == dir->size) {
+
+  uintptr_t ptr = 0;
+  uintptr_t block_offset = 0;
+
+  //  u8 *data_p = data;
+  //  u8 *data_end = data + allocation_size;
+  //  for (; data_p <= (data_end - sizeof(direntry_header_t)) &&
+  //         (dir = (direntry_header_t *)data_p)->inode;
+  for (; ptr <= file_size - sizeof(direntry_header_t);
+       ptr += dir->size, block_offset += dir->size) {
+
+    if (block_offset >= ctx->block_byte_size) {
+      block_offset %= ctx->block_byte_size;
+      (void)read_inode(ctx, directory_inode, block, ctx->block_byte_size,
+                       ptr - block_offset, NULL);
+    }
+    u8 *data_p = block + block_offset;
+
+    dir = (direntry_header_t *)data_p;
+    if (0 == dir->inode || 0 == dir->size) {
       break;
     }
     if (0 == dir->name_length) {
@@ -352,7 +376,8 @@ static bool find_inode_in_directory(struct ext2_ctx *ctx, u32 directory_inode,
       continue;
     }
 
-    assert(data_p + sizeof(direntry_header_t) + dir->name_length <= data_end);
+    assert(ptr + sizeof(direntry_header_t) + dir->name_length <=
+           file_size - sizeof(direntry_header_t));
     if (0 == memcmp(data_p + sizeof(direntry_header_t), sv_buffer(file),
                     dir->name_length)) {
       if (entry) {
@@ -361,11 +386,9 @@ static bool find_inode_in_directory(struct ext2_ctx *ctx, u32 directory_inode,
       if (inode) {
         *inode = dir->inode;
       }
-      kfree(data);
       return true;
     }
   }
-  kfree(data);
   return false;
 }
 
@@ -425,7 +448,8 @@ static int get_free_blocks(struct ext2_ctx *ctx, bool allocate, int entries[],
     return 0;
   }
   assert(0 == ctx->superblock.num_blocks_group % 8);
-  u8 *bitmap = kmalloc((ctx->superblock.num_blocks_group) / 8);
+  assert(((ctx->superblock.num_blocks_group) / 8) <= ctx->block_byte_size);
+  u8 *bitmap = get_allocated_block(ctx);
   for (u32 group = 0;
        group < num_block_groups(ctx) && current_entry < num_entries; group++) {
     get_group_descriptor(ctx, group, &block_group);
@@ -465,7 +489,6 @@ static int get_free_blocks(struct ext2_ctx *ctx, bool allocate, int entries[],
       ctx->superblock_changed = 1;
     }
   }
-  kfree(bitmap);
   return current_entry;
 }
 
@@ -633,21 +656,19 @@ struct vfs_fd *ext2_open(struct vfs_mount *mount, struct sv file, int flags,
   return fd;
 }
 
-static bool parse_superblock(struct ext2_ctx *ctx, err_t *rc_err) {
+static err_t parse_superblock(struct ext2_ctx *ctx) {
   err_t err;
   vfs_pread(ctx->fd, &ctx->superblock, 2 * SECTOR_SIZE,
             EXT2_SUPERBLOCK_SECTOR * SECTOR_SIZE, &err);
   if (ERROR_SUCCESS != err) {
-    ASSIGN_PTR(rc_err, err);
-    return false;
+    return err;
   }
 
   ctx->block_byte_size = 1024 << ctx->superblock.block_size;
 
   if (0xEF53 != ctx->superblock.ext2_signature) {
     klog(LOG_ERROR, "Incorrect ext2 signature in superblock.");
-    ASSIGN_PTR(rc_err, ERROR_INVALID_FORMAT);
-    return false;
+    return ERROR_INVALID_FORMAT;
   }
 
   if (1 <= ctx->superblock.major_version) {
@@ -655,7 +676,7 @@ static bool parse_superblock(struct ext2_ctx *ctx, err_t *rc_err) {
   }
 
   ctx->inodes_per_block = ctx->block_byte_size / ctx->inode_size;
-  return true;
+  return ERROR_SUCCESS;
 }
 
 struct vfs_mount *ext2_create(struct vfs_fd *fd) {
@@ -668,6 +689,7 @@ struct vfs_mount *ext2_create(struct vfs_fd *fd) {
     kfree(mount);
     return NULL;
   }
+
   ctx->fd = fd;
   ctx->superblock_changed = false;
   for (int i = 0; i < EXT2_NUM_CACHE; i++) {
@@ -677,7 +699,14 @@ struct vfs_mount *ext2_create(struct vfs_fd *fd) {
   mount->open = ext2_open;
   mount->internal_object = (void *)ctx;
 
-  if (!parse_superblock(ctx, NULL)) {
+  if (ERROR_SUCCESS != parse_superblock(ctx)) {
+    kfree(ctx);
+    kfree(mount);
+    return NULL;
+  }
+
+  ctx->pre_allocated_block = kmalloc(ctx->block_byte_size);
+  if (!ctx->pre_allocated_block) {
     kfree(ctx);
     kfree(mount);
     return NULL;
