@@ -60,6 +60,10 @@ size_t pipe_write(struct vfs_fd *fd, const void *buffer, size_t length,
 
   lock_release(&p->lock);
 
+  if (0 == rc && 0 != length) {
+    ASSIGN_PTR(err, ERROR_WRITE_WOULD_BLOCK);
+  }
+
   return rc;
 }
 
@@ -85,6 +89,10 @@ size_t pipe_read(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
   send_update(rb, other, fd);
 
   lock_release(&p->lock);
+
+  if (0 == rc && 0 != length) {
+    ASSIGN_PTR(err, ERROR_READ_WOULD_BLOCK);
+  }
 
   return rc;
 }
