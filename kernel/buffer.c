@@ -9,7 +9,7 @@ void buffer_init(struct buffer *ctx, void *buffer, size_t size) {
 }
 
 err_t buffer_write(struct buffer *ctx, const void *buffer, u64 count,
-                   u64 offset, u64 *out) {
+                   u64 offset, size_t *out) {
   if (offset >= ctx->size) {
     ASSIGN_PTR(out, 0);
     return ERROR_WRITE_EXCEEDS_BOUNDS;
@@ -23,7 +23,7 @@ err_t buffer_write(struct buffer *ctx, const void *buffer, u64 count,
 }
 
 err_t buffer_read(struct buffer *ctx, void *buffer, u64 count, u64 offset,
-                  u64 *out) {
+                  size_t *out) {
   if (offset >= ctx->size) {
     ASSIGN_PTR(out, 0);
     return ERROR_READ_EXCEEDS_BOUNDS;

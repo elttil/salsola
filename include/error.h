@@ -20,6 +20,7 @@ enum {
   ERROR_MMAP_INVALID_MAP,
   ERROR_READ_WOULD_BLOCK,
   ERROR_WRITE_WOULD_BLOCK,
+  ERROR_GENERIC_TODO,
 };
 
 #endif // ERROR_H
@@ -33,7 +34,18 @@ typedef int err_t;
     }                                                                          \
   }
 
+#define TRY_COND(expr, var, label)                                             \
+  {                                                                            \
+    err_t macro_error;                                                         \
+    if (ERROR_SUCCESS != (macro_error = (expr))) {                             \
+      var = macro_error;                                                      \
+      goto label;                                                      \
+    }                                                                          \
+  }
+
 #define ASSIGN_PTR(ptr, value)                                                 \
   if (ptr) {                                                                   \
     *(ptr) = (value);                                                          \
+  } else {                                                                     \
+    (void)(value);                                                             \
   }

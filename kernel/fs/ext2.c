@@ -255,10 +255,9 @@ read_block_redo:
   }
 
   if (is_new || block != cache->block_number) {
-    int err;
-    vfs_pread(ctx->fd, cache->buffer, ctx->block_byte_size,
-              block * ctx->block_byte_size, &err);
-    assert(err == ERROR_SUCCESS);
+    assert(ERROR_SUCCESS == vfs_pread(ctx->fd, cache->buffer,
+                                      ctx->block_byte_size,
+                                      block * ctx->block_byte_size, NULL));
     cache->block_number = block;
   }
 
@@ -273,10 +272,9 @@ read_block_redo:
 static void write_block(struct ext2_ctx *ctx, u32 block, const void *address,
                         size_t size, size_t offset) {
   // TODO: Cache
-  int err;
-  vfs_pwrite(ctx->fd, address, size, block * ctx->block_byte_size + offset,
-             &err);
-  assert(err == ERROR_SUCCESS);
+  assert(ERROR_SUCCESS == vfs_pwrite(ctx->fd, address, size,
+                                     block * ctx->block_byte_size + offset,
+                                     NULL));
 }
 
 // static void get_inode_header(struct ext2_ctx *ctx, u32 inode_index, u8 *data)
@@ -600,8 +598,8 @@ static int write_inode(struct ext2_ctx *ctx, int inode_num, const void *data,
   return bytes_written;
 }
 
-size_t ext2_write(struct vfs_fd *fd, const void *buffer, size_t length,
-                  size_t offset, err_t *err) {
+err_t ext2_write(struct vfs_fd *fd, const void *buffer, size_t length,
+                 size_t offset, size_t *rc) {
   u32 inode_num = (u32)fd->internal_object;
   /* TODO
   assert(fd->inode->type != FS_TYPE_DIRECTORY);
@@ -609,17 +607,17 @@ size_t ext2_write(struct vfs_fd *fd, const void *buffer, size_t length,
     inode_num = resolve_link(inode_num);
   }
   */
-  ASSIGN_PTR(err, ERROR_SUCCESS);
   struct ext2_ctx *ctx = (struct ext2_ctx *)fd->mount->internal_object;
-  return write_inode(ctx, inode_num, buffer, length, offset, NULL, 0);
+  ASSIGN_PTR(rc, write_inode(ctx, inode_num, buffer, length, offset, NULL, 0));
+  return ERROR_SUCCESS;
 }
 
-size_t ext2_read(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
-                 err_t *err) {
-  ASSIGN_PTR(err, ERROR_SUCCESS);
+err_t ext2_read(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
+                size_t *rc) {
   struct ext2_ctx *ctx = (struct ext2_ctx *)fd->mount->internal_object;
   u32 inode_num = (u32)fd->internal_object;
-  return read_inode(ctx, inode_num, buffer, length, offset, NULL);
+  ASSIGN_PTR(rc, read_inode(ctx, inode_num, buffer, length, offset, NULL));
+  return ERROR_SUCCESS;
 }
 
 err_t ext2_lseek(struct vfs_fd *fd, off_t offset, int whence, off_t *out) {
@@ -670,12 +668,8 @@ struct vfs_fd *ext2_open(struct vfs_mount *mount, struct sv file, int flags,
 }
 
 static err_t parse_superblock(struct ext2_ctx *ctx) {
-  err_t err;
-  vfs_pread(ctx->fd, &ctx->superblock, 2 * SECTOR_SIZE,
-            EXT2_SUPERBLOCK_SECTOR * SECTOR_SIZE, &err);
-  if (ERROR_SUCCESS != err) {
-    return err;
-  }
+  TRY(vfs_pread(ctx->fd, &ctx->superblock, 2 * SECTOR_SIZE,
+                EXT2_SUPERBLOCK_SECTOR * SECTOR_SIZE, NULL));
 
   ctx->block_byte_size = 1024 << ctx->superblock.block_size;
 

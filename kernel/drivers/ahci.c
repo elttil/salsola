@@ -454,14 +454,13 @@ static u8 ahci_raw_read(volatile struct HBA_PORT *port, u32 startl, u32 starth,
   return ahci_perform_command(port, startl, starth, count, outbuffer, 0);
 }
 
-size_t ahci_write(struct vfs_fd *fd, const void *buffer, size_t length,
-                  size_t offset, err_t *err) {
-  ASSIGN_PTR(err, ERROR_SUCCESS);
+err_t ahci_write(struct vfs_fd *fd, const void *buffer, size_t length,
+                 size_t offset, size_t *rc) {
   int port = (int)fd->internal_object;
   assert(port == 0);
   u32 lba = offset / 512;
   offset %= 512;
-  const int rc = length;
+  const int r = length;
 
   u32 sector_count = length / 512;
   if (length % 512 != 0) {
@@ -493,29 +492,31 @@ size_t ahci_write(struct vfs_fd *fd, const void *buffer, size_t length,
 
   if (sector_count > 0 && (0 == length % SECTOR_SIZE)) {
     ahci_raw_write(&hba->ports[port], lba, 0, sector_count, (u16 *)buffer);
-    return rc;
+    ASSIGN_PTR(rc, r);
+    return ERROR_SUCCESS;
   }
 
   if (sector_count > 0 && length > 0) {
-    u8 tmp_buffer[512 * sector_count];
+    u8 tmp_buffer[512 * NUM_PRDT]; // NUM_PRDT is possibly larger than
+                                   // sector_count(which is used), but it
+                                   // avoids us using a VLA.
     ahci_raw_read(&hba->ports[port], lba, 0, sector_count, (u16 *)tmp_buffer);
     memcpy(tmp_buffer + offset, buffer, length);
     ahci_raw_write(&hba->ports[port], lba, 0, sector_count, (u16 *)tmp_buffer);
   }
-  return rc;
+  ASSIGN_PTR(rc, r);
+  return ERROR_SUCCESS;
 }
 
-size_t ahci_read(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
-                 err_t *err) {
-  ASSIGN_PTR(err, ERROR_SUCCESS);
-
+err_t ahci_read(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
+                size_t *rc) {
   int port = (int)fd->internal_object;
   assert(port == 0);
   u32 lba = offset / 512;
   offset %= 512;
-  int rc = length; // FIXME: This almost certainly is not true, but it is
-                   // fine for now since we are using a filesystem
-                   // abstraction anyways.
+  int r = length; // FIXME: This almost certainly is not true, but it is
+                  // fine for now since we are using a filesystem
+                  // abstraction anyways.
 
   u32 sector_count = length / 512;
   if (length % 512 != 0) {
@@ -535,7 +536,8 @@ size_t ahci_read(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
     ahci_raw_read(&hba->ports[port], lba, 0, sector_count, (u16 *)tmp_buffer);
     memcpy(buffer, tmp_buffer + offset, length);
   }
-  return rc;
+  ASSIGN_PTR(rc, r);
+  return ERROR_SUCCESS;
 }
 
 bool ahci_open(struct vfs_fd *fd, struct sv file, int flags,

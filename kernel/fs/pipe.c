@@ -38,10 +38,9 @@ static void send_update(struct ringbuffer *rb, struct vfs_fd *writer,
   vfs_notify_can_write(writer, can_write);
 }
 
-size_t pipe_write(struct vfs_fd *fd, const void *buffer, size_t length,
-                  size_t offset, err_t *err) {
+err_t pipe_write(struct vfs_fd *fd, const void *buffer, size_t length,
+                 size_t offset, size_t *rc) {
   (void)offset;
-  ASSIGN_PTR(err, ERROR_SUCCESS);
   struct pipe *p = fd->internal_object;
 
   lock_acquire(&p->lock);
@@ -55,22 +54,22 @@ size_t pipe_write(struct vfs_fd *fd, const void *buffer, size_t length,
     rb = &p->buffers[0];
     other = p->fds[0];
   }
-  size_t rc = ringbuffer_write(rb, buffer, length);
+  size_t r = ringbuffer_write(rb, buffer, length);
   send_update(rb, fd, other);
 
   lock_release(&p->lock);
 
-  if (0 == rc && 0 != length) {
-    ASSIGN_PTR(err, ERROR_WRITE_WOULD_BLOCK);
+  ASSIGN_PTR(rc, r);
+  if (0 == r && 0 != length) {
+    return ERROR_READ_WOULD_BLOCK;
   }
 
-  return rc;
+  return ERROR_SUCCESS;
 }
 
-size_t pipe_read(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
-                 err_t *err) {
+err_t pipe_read(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
+                size_t *rc) {
   (void)offset;
-  ASSIGN_PTR(err, ERROR_SUCCESS);
 
   struct pipe *p = fd->internal_object;
 
@@ -85,16 +84,17 @@ size_t pipe_read(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
     rb = &p->buffers[1];
     other = p->fds[1];
   }
-  size_t rc = ringbuffer_read(rb, buffer, length);
+  size_t r = ringbuffer_read(rb, buffer, length);
   send_update(rb, other, fd);
 
   lock_release(&p->lock);
 
-  if (0 == rc && 0 != length) {
-    ASSIGN_PTR(err, ERROR_READ_WOULD_BLOCK);
+  ASSIGN_PTR(rc, r);
+  if (0 == r && 0 != length) {
+    return ERROR_READ_WOULD_BLOCK;
   }
 
-  return rc;
+  return ERROR_SUCCESS;
 }
 
 err_t pipe(struct vfs_fd *fd[2]) {

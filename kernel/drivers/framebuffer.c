@@ -24,26 +24,18 @@ struct display_info vbe_info;
 #define place_pixel_pos(_p, _pos)                                              \
   { *(u32 *)((u32 *)framebuffer + _pos) = _p; }
 
-size_t framebuffer_write(struct vfs_fd *fd, const void *buffer, size_t length,
-                         size_t offset, err_t *err) {
+err_t framebuffer_write(struct vfs_fd *fd, const void *buffer, size_t length,
+                        size_t offset, size_t *rc) {
   struct display_info *info = fd->internal_object;
 
-  u64 out;
-  err_t r = buffer_write(&info->buffer, buffer, length, offset, &out);
-  ASSIGN_PTR(err, r);
-
-  return out;
+  return buffer_write(&info->buffer, buffer, length, offset, rc);
 }
 
-size_t framebuffer_read(struct vfs_fd *fd, void *buffer, size_t length,
-                        size_t offset, err_t *err) {
+err_t framebuffer_read(struct vfs_fd *fd, void *buffer, size_t length,
+                       size_t offset, size_t *rc) {
   struct display_info *info = fd->internal_object;
 
-  u64 out;
-  err_t r = buffer_read(&info->buffer, buffer, length, offset, &out);
-  ASSIGN_PTR(err, r);
-
-  return out;
+  return buffer_read(&info->buffer, buffer, length, offset, rc);
 }
 
 err_t framebuffer_mmap(struct vfs_fd *fd, void *addr, size_t length, int prot,
@@ -109,6 +101,5 @@ bool display_driver_init(struct multiboot_tag_framebuffer_common *mbi) {
   buffer_init(&vbe_info.buffer, vbe_info.framebuffer,
               vbe_info.framebuffer_size);
 
-  memset(vbe_info.framebuffer, 0xFF, vbe_info.framebuffer_width * 20);
   return true;
 }

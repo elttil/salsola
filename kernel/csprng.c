@@ -122,23 +122,23 @@ void csprng_add_entropy(const void *buffer, u64 size) {
   }
 }
 
-size_t random_write(struct vfs_fd *fd, const void *buffer, size_t length,
-                    size_t offset, err_t *err) {
+err_t random_write(struct vfs_fd *fd, const void *buffer, size_t length,
+                   size_t offset, size_t *rc) {
   (void)fd;
   (void)offset;
-  ASSIGN_PTR(err, ERROR_SUCCESS);
   csprng_add_entropy(buffer, length);
   add_hash_pool();
-  return length;
+  ASSIGN_PTR(rc, length);
+  return ERROR_SUCCESS;
 }
 
-size_t random_read(struct vfs_fd *fd, void *buffer, size_t length,
-                   size_t offset, err_t *err) {
+err_t random_read(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
+                  size_t *rc) {
   (void)fd;
   (void)offset;
-  ASSIGN_PTR(err, ERROR_SUCCESS);
   csprng_get_random(buffer, length);
-  return length;
+  ASSIGN_PTR(rc, length);
+  return ERROR_SUCCESS;
 }
 
 bool random_open(struct vfs_fd *fd, struct sv file, int flags,
@@ -147,7 +147,7 @@ bool random_open(struct vfs_fd *fd, struct sv file, int flags,
   (void)file;
   (void)flags;
   (void)internal_object;
-  (void)err;
+  ASSIGN_PTR(err, ERROR_SUCCESS);
   fd->type = VFS_TYPE_CHAR_DEVICE;
   fd->read = random_read;
   fd->write = random_write;

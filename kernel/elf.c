@@ -7,22 +7,25 @@
 #include <mmu.h>
 #include <typedefs.h>
 
-void *elf_load_file(struct sv file, void **ds) {
+err_t elf_load_file(struct sv file, void **ds, void **entry) {
+  err_t err;
   Elf64_Ehdr header;
   //  ELFHeader header;
   struct vfs_fd *fd = vfs_open(file, O_RDONLY, NULL);
   if (!fd) {
-    return NULL;
+    return ERROR_NO_FILE;
   }
 
-  if (sizeof(header) != vfs_pread(fd, &header, sizeof(header), 0, NULL)) {
-    vfs_close(fd);
-    return NULL;
+  size_t rc;
+  TRY_COND(vfs_pread(fd, &header, sizeof(header), 0, &rc), err, cleanup);
+  if (sizeof(header) != rc) {
+    err = ERROR_GENERIC_TODO;
+    goto cleanup;
   }
 
   if (0 != memcmp(header.e_ident, "\x7F\x45\x4C\x46" /* "\x7FELF" */, 4)) {
-    vfs_close(fd);
-    return NULL;
+    err = ERROR_GENERIC_TODO;
+    goto cleanup;
   }
 
   Elf64_Phdr program_header;
@@ -31,10 +34,13 @@ void *elf_load_file(struct sv file, void **ds) {
   uintptr_t end_of_code = 0;
   for (int i = 0; i < header.e_phnum;
        i++, header_offset += header.e_phentsize) {
-    if (0 >= vfs_pread(fd, &program_header, sizeof(program_header),
-                       header_offset, NULL)) {
-      vfs_close(fd);
-      return NULL;
+
+    TRY_COND(vfs_pread(fd, &program_header, sizeof(program_header),
+                       header_offset, &rc),
+             err, cleanup);
+    if (0 >= rc) {
+      err = ERROR_GENERIC_TODO;
+      goto cleanup;
     }
 
     // FIXME: Only one type is supported, which is 1(load). More should be
@@ -53,8 +59,8 @@ void *elf_load_file(struct sv file, void **ds) {
 
     if (!mmu_allocate_region((void *)p_vaddr, pages_to_allocate * 0x1000,
                              MMU_FLAG_RW | MMU_FLAG_USER)) {
-      vfs_close(fd);
-      return NULL;
+      err = ERROR_GENERIC_TODO;
+      goto cleanup;
     }
 
     uintptr_t e = program_header.p_vaddr + program_header.p_memsz;
@@ -65,14 +71,20 @@ void *elf_load_file(struct sv file, void **ds) {
     memset((void *)program_header.p_vaddr, 0, program_header.p_memsz);
 
     // 2. Copy p_filesz bytes from p_offset to p_vaddr
-    int rc = vfs_pread(fd, (void *)program_header.p_vaddr,
-                       program_header.p_filesz, program_header.p_offset, NULL);
+    assert(ERROR_SUCCESS == vfs_pread(fd, (void *)program_header.p_vaddr,
+                                      program_header.p_filesz,
+                                      program_header.p_offset, &rc));
 
-    assert(rc == (int)program_header.p_filesz);
+    assert(rc == program_header.p_filesz);
   }
   if (ds) {
     *ds = (void *)end_of_code;
   }
   vfs_close(fd);
-  return (void *)header.e_entry;
+  ASSIGN_PTR(entry, (void *)header.e_entry);
+  return ERROR_SUCCESS;
+
+cleanup:
+  vfs_close(fd);
+  return err;
 }

@@ -105,51 +105,47 @@ void vfs_notify_can_write(struct vfs_fd *fd, bool can_write) {
   vfs_notify_listeners(fd);
 }
 
-size_t vfs_pread(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
-                 err_t *err) {
-  ASSIGN_PTR(err, ERROR_SUCCESS);
+err_t vfs_pread(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
+                size_t *rc) {
   if (!fd) {
-    ASSIGN_PTR(err, ERROR_INVALID_FD);
-    return 0;
+    return ERROR_INVALID_FD;
   }
   if (!fd->read) {
-    ASSIGN_PTR(err, ERROR_FD_HAS_NO_READ);
-    return 0;
+    return ERROR_FD_HAS_NO_READ;
   }
-  return fd->read(fd, buffer, length, offset, err);
+    return fd->read(fd, buffer, length, offset, rc);
 }
 
-size_t vfs_read(struct vfs_fd *fd, void *buffer, size_t length, err_t *err) {
-  ASSIGN_PTR(err, ERROR_SUCCESS);
-  size_t r = vfs_pread(fd, buffer, length, fd->offset, err);
+err_t vfs_read(struct vfs_fd *fd, void *buffer, size_t length, size_t *rc) {
+  size_t p;
+  err_t err = vfs_pread(fd, buffer, length, fd->offset, &p);
   if (VFS_TYPE_CHAR_DEVICE != fd->type) {
-    fd->offset += r;
+    fd->offset += p;
   }
-  return r;
+  ASSIGN_PTR(rc, p);
+  return err;
 }
 
-size_t vfs_pwrite(struct vfs_fd *fd, const void *buffer, size_t length,
-                  size_t offset, err_t *err) {
-  ASSIGN_PTR(err, ERROR_SUCCESS);
+err_t vfs_pwrite(struct vfs_fd *fd, const void *buffer, size_t length,
+                 size_t offset, size_t *rc) {
   if (!fd) {
-    ASSIGN_PTR(err, ERROR_INVALID_FD);
-    return 0;
+    return ERROR_INVALID_FD;
   }
   if (!fd->write) {
-    ASSIGN_PTR(err, ERROR_FD_HAS_NO_WRITE);
-    return 0;
+    return ERROR_FD_HAS_NO_WRITE;
   }
-  return fd->write(fd, buffer, length, offset, err);
+  return fd->write(fd, buffer, length, offset, rc);
 }
 
-size_t vfs_write(struct vfs_fd *fd, const void *buffer, size_t length,
-                 err_t *err) {
-  ASSIGN_PTR(err, ERROR_SUCCESS);
-  size_t r = vfs_pwrite(fd, buffer, length, fd->offset, err);
+err_t vfs_write(struct vfs_fd *fd, const void *buffer, size_t length,
+                size_t *rc) {
+  size_t p;
+  err_t err = vfs_pwrite(fd, buffer, length, fd->offset, &p);
   if (VFS_TYPE_CHAR_DEVICE != fd->type) {
-    fd->offset += r;
+    fd->offset += p;
   }
-  return r;
+  ASSIGN_PTR(rc, p);
+  return err;
 }
 
 err_t vfs_lseek(struct vfs_fd *fd, off_t offset, int whence, off_t *out) {

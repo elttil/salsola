@@ -60,6 +60,26 @@ u32 ringbuffer_write(struct ringbuffer *rb, const u8 *buffer, u32 len) {
   return orig_len - len;
 }
 
+err_t ringbuffer_wrapped_write(struct ringbuffer *rb, const u8 *buffer, u32 len,
+                               size_t *rc) {
+  size_t r = ringbuffer_write(rb, buffer, len);
+  ASSIGN_PTR(rc, r);
+  if (0 == r && len != 0) {
+    return ERROR_WRITE_WOULD_BLOCK;
+  }
+  return ERROR_SUCCESS;
+}
+
+err_t ringbuffer_wrapped_read(struct ringbuffer *rb, u8 *buffer, u32 len,
+                              size_t *rc) {
+  size_t r = ringbuffer_read(rb, buffer, len);
+  ASSIGN_PTR(rc, r);
+  if (0 == r && len != 0) {
+    return ERROR_READ_WOULD_BLOCK;
+  }
+  return ERROR_SUCCESS;
+}
+
 u32 ringbuffer_read(struct ringbuffer *rb, u8 *buffer, u32 len) {
   const u32 orig_len = len;
   for (; len > 0;) {

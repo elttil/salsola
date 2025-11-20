@@ -17,11 +17,10 @@ u64 timer_get_ms(void) {
   return (rdtsc() - tsc_start) / (tsc_mhz * 1000);
 }
 
-size_t timer_read(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
-                  err_t *err) {
+err_t timer_read(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
+                 size_t *rc) {
   (void)fd;
   (void)offset;
-  ASSIGN_PTR(err, ERROR_SUCCESS);
 
   struct sb ctx;
   sb_init_buffer(&ctx, buffer, length);
@@ -29,7 +28,8 @@ size_t timer_read(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
 
   u64 r = timer_get_ms();
   (void)ksbprintf(&ctx, "%llu", r);
-  return sv_length(SB_TO_SV(ctx));
+  ASSIGN_PTR(rc, sv_length(SB_TO_SV(ctx)));
+  return ERROR_SUCCESS;
 }
 
 bool timer_open(struct vfs_fd *fd, struct sv file, int flags,

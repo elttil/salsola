@@ -100,19 +100,13 @@ err_t task_fd_open(u64 *fd, struct sv path, int flags) {
 err_t task_fd_read(u64 fd, void *buffer, u64 count, u64 *out) {
   struct vfs_fd *fd_ptr;
   GET_FD(fd, &fd_ptr);
-  err_t err;
-  u64 r = vfs_read(fd_ptr, buffer, count, &err);
-  ASSIGN_PTR(out, r);
-  return err;
+  return vfs_read(fd_ptr, buffer, count, out);
 }
 
 err_t task_fd_write(u64 fd, const void *buffer, u64 count, u64 *out) {
   struct vfs_fd *fd_ptr;
   GET_FD(fd, &fd_ptr);
-  err_t err;
-  u64 r = vfs_write(fd_ptr, buffer, count, &err);
-  ASSIGN_PTR(out, r);
-  return err;
+  return vfs_write(fd_ptr, buffer, count, out);
 }
 
 err_t task_lseek(u64 fd, off_t offset, int whence, off_t *out) {
@@ -299,7 +293,7 @@ static err_t setup_stack(void **out, u64 stack_length, struct sv *args,
   return ERROR_SUCCESS;
 }
 
-void task_exec(struct sv file, struct sv *args, u32 num_of_args) {
+err_t task_exec(struct sv file, struct sv *args, u32 num_of_args) {
   struct list_memory_ctx *maps = &get_current_task()->mappings;
   for (u64 j = 0;; j++) {
     struct memory_mapping *map;
@@ -315,10 +309,8 @@ void task_exec(struct sv file, struct sv *args, u32 num_of_args) {
   mmu_unmap_frames(0, 0xF000000000, true);
 
   void *program_end;
-  void *entry = elf_load_file(file, &program_end);
-  if (!entry) {
-    return;
-  }
+  void *entry;
+  TRY(elf_load_file(file, &program_end, &entry));
 
   uintptr_t stack_length = 0x5000;
   void *stack_ptr;

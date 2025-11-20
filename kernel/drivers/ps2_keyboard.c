@@ -1,8 +1,12 @@
+#include <assert.h>
 #include <drivers/ps2_keyboard.h>
+#include <fs/ramfs.h>
+#include <fs/vfs.h>
 #include <io.h>
 #include <kprintf.h>
 #include <ringbuffer.h>
 #include <stdbool.h>
+#include <sv.h>
 
 #define PS2_REG_DATA 0x60
 #define PS2_REG_STATUS 0x64
@@ -152,10 +156,43 @@ void keyboard_handler(struct cpu_status *r) {
   ringbuffer_write(&keyboard_buffer, (u8 *)&ev, sizeof(ev));
 }
 
+err_t keyboard_read(struct vfs_fd *fd, void *buffer, size_t length,
+                    size_t offset, size_t *rc) {
+  (void)fd;
+  (void)offset;
+  size_t num_entries = length / sizeof(struct key_event);
+  if (0 == num_entries) {
+    ASSIGN_PTR(rc, 0);
+    return ERROR_SUCCESS; // TODO: Maybe provide a different error here?
+  }
+  return ringbuffer_wrapped_read(&keyboard_buffer, buffer,
+                                 num_entries * sizeof(struct key_event), rc);
+}
+
+bool keyboard_open(struct vfs_fd *fd, struct sv file, int flags,
+                   void *internal_object, int *err) {
+  (void)fd;
+  (void)file;
+  (void)flags;
+  (void)err;
+  fd->internal_object = internal_object;
+  fd->type = VFS_TYPE_CHAR_DEVICE;
+  fd->read = keyboard_read;
+  return true;
+}
+
+bool add_keyboard_device(struct sv filename) {
+  struct vfs_mount *mount = vfs_find_mount(C_TO_SV("/dev"));
+  assert(mount);
+  assert(ramfs_add_file(mount, filename, keyboard_open, NULL, NULL));
+  return true;
+}
+
 bool ps2_keyboard_init(void) {
-  //  if (!ringbuffer_init(&keyboard_buffer, sizeof(struct key_event) * 128)) {
-  //    return false;
-  //  }
+  if (!ringbuffer_init(&keyboard_buffer, sizeof(struct key_event) * 128)) {
+    return false;
+  }
   handler_install(0x21, keyboard_handler, 0);
+  add_keyboard_device(C_TO_SV("/dev/keyboard"));
   return true;
 }

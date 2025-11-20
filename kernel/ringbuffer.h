@@ -1,7 +1,8 @@
 #ifndef RINGBUFFER_H
 #define RINGBUFFER_H
-#include <typedefs.h>
 #include <stdbool.h>
+#include <typedefs.h>
+#include <error.h>
 
 struct ringbuffer {
   u8 *buffer;
@@ -18,6 +19,10 @@ void ringbuffer_free(struct ringbuffer *rb);
 u32 ringbuffer_used(const struct ringbuffer *rb);
 u32 ringbuffer_capacity(const struct ringbuffer *rb);
 u32 ringbuffer_unused(const struct ringbuffer *rb);
+err_t ringbuffer_wrapped_write(struct ringbuffer *rb, const u8 *buffer, u32 len,
+                               size_t *rc);
+err_t ringbuffer_wrapped_read(struct ringbuffer *rb, u8 *buffer, u32 len,
+                              size_t *rc);
 #ifdef KERNEL_TEST
 void ringbuffer_test(void);
 #endif // KERNEL_TEST

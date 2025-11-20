@@ -44,15 +44,15 @@ void serial_print_string(const char *str, size_t length) {
   }
 }
 
-size_t serial_write(struct vfs_fd *fd, const void *buffer, size_t length,
-                    size_t offset, err_t *err) {
+err_t serial_write(struct vfs_fd *fd, const void *buffer, size_t length,
+                   size_t offset, size_t *rc) {
   (void)fd;
   (void)buffer;
   (void)length;
   (void)offset;
   serial_print_string(buffer, length);
-  ASSIGN_PTR(err, ERROR_SUCCESS);
-  return length;
+  ASSIGN_PTR(rc, length);
+  return ERROR_SUCCESS;
 }
 
 bool serial_open(struct vfs_fd *fd, struct sv file, int flags,
