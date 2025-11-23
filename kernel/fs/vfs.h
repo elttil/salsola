@@ -46,6 +46,8 @@ struct vfs_fd {
   void *internal_object;
   void (*close)(struct vfs_fd *fd);
 
+  bool is_blocking;
+
   u32 outside_references;
 
   struct list_listener_ctx listeners;

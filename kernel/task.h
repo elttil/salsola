@@ -31,6 +31,14 @@ struct tcb {
   u64 rsp0;
 } __attribute__((packed));
 
+#define TASK_WAIT_READ 1
+#define TASK_WAIT_WRITE 2
+
+struct wait {
+  struct vfs_fd *fd;
+  int flag;
+};
+
 struct task {
   // NOTE: Assembly code depends upon the TCB being at the start
   struct tcb tcb;
@@ -40,6 +48,7 @@ struct task {
   struct list_memory_ctx mappings;
   struct mmu_directory *directory;
   struct kpoll *active_kpoll;
+  struct wait wait;
   struct task *parent;
   struct task *next;
 };

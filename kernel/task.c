@@ -82,6 +82,13 @@ err_t task_fd_pipe(u64 fd[2]) {
   return ERROR_SUCCESS;
 }
 
+void task_set_wait(struct vfs_fd *fd, int flag) {
+  struct task *task = get_current_task();
+  task->wait.fd = fd;
+  task->wait.flag = flag;
+  task_legacy_switch();
+}
+
 err_t task_fd_open(u64 *fd, struct sv path, int flags) {
   err_t err;
   struct vfs_fd *fd_ptr = vfs_open(path, flags, &err);
@@ -393,6 +400,16 @@ static bool is_halted(struct task *task) {
       return true;
     }
     lock_release(&kpoll->lock);
+  }
+  if (task->wait.fd) {
+    struct vfs_fd *fd = task->wait.fd;
+    if (TASK_WAIT_READ == task->wait.flag && !fd->data.can_read) {
+      return true;
+    }
+    if (TASK_WAIT_WRITE == task->wait.flag && !fd->data.can_write) {
+      return true;
+    }
+    task->wait.fd = NULL;
   }
   return false;
 }

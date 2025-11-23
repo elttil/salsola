@@ -2,6 +2,7 @@
 #include <fs/vfs.h>
 #include <kmalloc.h>
 #include <stdbool.h>
+#include <task.h>
 
 struct mount_list {
   struct vfs_mount *mount;
@@ -30,6 +31,7 @@ struct vfs_mount *vfs_find_mount(struct sv path) {
 struct vfs_fd *vfs_allocate_fd(void) {
   struct vfs_fd *fd = kcalloc(1, sizeof(struct vfs_fd));
   list_listener_init(&fd->listeners);
+  fd->is_blocking = true;
   return fd;
 }
 
@@ -113,7 +115,16 @@ err_t vfs_pread(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
   if (!fd->read) {
     return ERROR_FD_HAS_NO_READ;
   }
+  if (!fd->is_blocking) {
     return fd->read(fd, buffer, length, offset, rc);
+  }
+  err_t err = fd->read(fd, buffer, length, offset, rc);
+  for (; ERROR_READ_WOULD_BLOCK == err;) {
+    task_set_wait(fd, TASK_WAIT_READ);
+    err = fd->read(fd, buffer, length, offset, rc);
+  }
+
+  return err;
 }
 
 err_t vfs_read(struct vfs_fd *fd, void *buffer, size_t length, size_t *rc) {

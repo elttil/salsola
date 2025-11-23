@@ -7,6 +7,7 @@
 #include <ringbuffer.h>
 #include <stdbool.h>
 #include <sv.h>
+#include <task.h>
 
 #define PS2_REG_DATA 0x60
 #define PS2_REG_STATUS 0x64
@@ -108,6 +109,8 @@ u8 keyboard_to_ascii(u16 key, u8 capital) {
   }
 }
 
+struct list_fd_ctx listeners;
+
 void keyboard_handler(struct cpu_status *r) {
   (void)r;
   u16 c;
@@ -154,6 +157,15 @@ void keyboard_handler(struct cpu_status *r) {
   ev.mode |= is_alt_down << 1;
   ev.mode |= is_ctrl_down << 2;
   ringbuffer_write(&keyboard_buffer, (u8 *)&ev, sizeof(ev));
+  bool has_data = (0 != ringbuffer_used(&keyboard_buffer));
+  for (u64 i = 0; i < listeners.length; i++) {
+    struct vfs_fd *fd;
+    assert(list_fd_get(&listeners, i, &fd));
+    if (!fd) {
+      continue;
+    }
+    vfs_notify_can_read(fd, has_data);
+  }
 }
 
 err_t keyboard_read(struct vfs_fd *fd, void *buffer, size_t length,
@@ -165,8 +177,11 @@ err_t keyboard_read(struct vfs_fd *fd, void *buffer, size_t length,
     ASSIGN_PTR(rc, 0);
     return ERROR_SUCCESS; // TODO: Maybe provide a different error here?
   }
-  return ringbuffer_wrapped_read(&keyboard_buffer, buffer,
-                                 num_entries * sizeof(struct key_event), rc);
+  err_t err = ringbuffer_wrapped_read(
+      &keyboard_buffer, buffer, num_entries * sizeof(struct key_event), rc);
+  bool has_data = (0 != ringbuffer_used(&keyboard_buffer));
+  vfs_notify_can_read(fd, has_data);
+  return err;
 }
 
 bool keyboard_open(struct vfs_fd *fd, struct sv file, int flags,
@@ -178,6 +193,7 @@ bool keyboard_open(struct vfs_fd *fd, struct sv file, int flags,
   fd->internal_object = internal_object;
   fd->type = VFS_TYPE_CHAR_DEVICE;
   fd->read = keyboard_read;
+  assert(list_fd_add(&listeners, fd, NULL));
   return true;
 }
 
@@ -189,6 +205,7 @@ bool add_keyboard_device(struct sv filename) {
 }
 
 bool ps2_keyboard_init(void) {
+  list_fd_init(&listeners);
   if (!ringbuffer_init(&keyboard_buffer, sizeof(struct key_event) * 128)) {
     return false;
   }
