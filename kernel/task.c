@@ -55,7 +55,7 @@ err_t task_fd_dup2(u64 oldfd, u64 newfd) {
   struct vfs_fd *fd_ptr;
   GET_FD(oldfd, &fd_ptr);
 
-  (void)task_fd_close(newfd);
+  UNUSED(task_fd_close(newfd));
 
   // TODO: Maybe don't do the task_fd_close if this fails?
   TRY(list_fd_set(&task->fds, newfd, fd_ptr));
@@ -143,8 +143,9 @@ void task_create_directory(struct task *task, struct task *parent) {
 
 void jump_usermode(void(*ring3_function), void *stack);
 
-static err_t allocate(struct memory_mapping *map, void *addr, size_t length,
-                      int prot, int flags, int fd, off_t offset, void **out) {
+WARN_UNUSED static err_t allocate(struct memory_mapping *map, void *addr,
+                                  size_t length, int prot, int flags, int fd,
+                                  off_t offset, void **out) {
   map->flags = flags;
   // TODO: Handle prot
   (void)prot;
@@ -182,7 +183,7 @@ static err_t allocate(struct memory_mapping *map, void *addr, size_t length,
   return ERROR_SUCCESS;
 }
 
-err_t raw_task_munmap(struct memory_mapping *map) {
+WARN_UNUSED err_t raw_task_munmap(struct memory_mapping *map) {
   void *address = map->address;
   size_t length = map->length;
   bool deallocate = false;
@@ -196,7 +197,7 @@ err_t raw_task_munmap(struct memory_mapping *map) {
   return ERROR_SUCCESS;
 }
 
-err_t task_munmap(void *addr, size_t length) {
+WARN_UNUSED err_t task_munmap(void *addr, size_t length) {
   // TODO: Does length really matter? Should mmaps be able to overlap?
   (void)length;
   struct list_memory_ctx *maps = &get_current_task()->mappings;
@@ -211,15 +212,15 @@ err_t task_munmap(void *addr, size_t length) {
     if (map->address <= addr &&
         addr <= (void *)((u8 *)map->address + map->length)) {
       list_memory_remove(maps, j);
-      raw_task_munmap(map);
+      assert(ERROR_SUCCESS == raw_task_munmap(map));
       return ERROR_SUCCESS;
     }
   }
   return ERROR_MMAP_INVALID_MAP;
 }
 
-err_t task_mmap(void *addr, size_t length, int prot, int flags, int fd,
-                off_t offset, void **out) {
+WARN_UNUSED err_t task_mmap(void *addr, size_t length, int prot, int flags,
+                            int fd, off_t offset, void **out) {
   struct memory_mapping *map = kmalloc(sizeof(struct memory_mapping));
   if (!map) {
     return ERROR_NO_MEMORY;
@@ -244,8 +245,9 @@ err_t task_mmap(void *addr, size_t length, int prot, int flags, int fd,
   return ERROR_SUCCESS;
 }
 
-static err_t setup_stack(void **out, u64 stack_length, struct sv *args,
-                         u32 num_of_args, void **result) {
+WARN_UNUSED static err_t setup_stack(void **out, u64 stack_length,
+                                     struct sv *args, u32 num_of_args,
+                                     void **result) {
   void *stack_pointer;
   TRY(task_mmap(NULL, stack_length, PROT_READ | PROT_WRITE,
                 MAP_STACK | MAP_ANONYMOUS | MAP_PRIVATE, -1, 0,
@@ -310,7 +312,7 @@ err_t task_exec(struct sv file, struct sv *args, u32 num_of_args) {
     if (!map) {
       continue;
     }
-    raw_task_munmap(map);
+    UNUSED(raw_task_munmap(map));
   }
 
   mmu_unmap_frames(0, 0xF000000000, true);
@@ -383,7 +385,7 @@ void task_switch(struct task *task) {
   switch_to_task(old, task);
 }
 
-static struct task *task_next(struct task *task) {
+WARN_UNUSED static struct task *task_next(struct task *task) {
   task = task->next;
   if (!task) {
     task = task_head;
@@ -391,7 +393,7 @@ static struct task *task_next(struct task *task) {
   return task;
 }
 
-static bool is_halted(struct task *task) {
+WARN_UNUSED static bool is_halted(struct task *task) {
   struct kpoll *kpoll = task->active_kpoll;
   if (kpoll) {
     lock_acquire(&kpoll->lock);

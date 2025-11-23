@@ -62,18 +62,19 @@ struct task {
   }
 
 bool task_init(void);
-err_t task_fork(u64 *pid);
+WARN_UNUSED err_t task_fork(u64 *pid);
 void task_legacy_switch(void);
-err_t task_exec(struct sv file, struct sv *args, u32 num_of_args);
-err_t task_fd_open(u64 *fd, struct sv path, int flags);
-err_t task_fd_write(u64 fd, const void *buffer, u64 count, u64 *out);
-err_t task_fd_read(u64 fd, void *buffer, u64 count, u64 *out);
-err_t task_fd_close(u64 fd);
+WARN_UNUSED err_t task_exec(struct sv file, struct sv *args, u32 num_of_args);
+WARN_UNUSED err_t task_fd_open(u64 *fd, struct sv path, int flags);
+WARN_UNUSED err_t task_fd_write(u64 fd, const void *buffer, u64 count, u64 *out);
+WARN_UNUSED err_t task_fd_read(u64 fd, void *buffer, u64 count, u64 *out);
+WARN_UNUSED err_t task_fd_close(u64 fd);
 void *task_sbrk(uintptr_t increment);
-err_t task_lseek(u64 fd, off_t offset, int whence, off_t *out);
-err_t task_mmap(void *addr, size_t length, int prot, int flags, int fd,
+WARN_UNUSED err_t task_lseek(u64 fd, off_t offset, int whence, off_t *out);
+WARN_UNUSED err_t task_mmap(void *addr, size_t length, int prot, int flags, int fd,
                 off_t offset, void **out);
-err_t task_fd_dup2(u64 oldfd, u64 newfd);
-err_t task_fd_pipe(u64 fd[2]);
+WARN_UNUSED err_t task_fd_dup2(u64 oldfd, u64 newfd);
+WARN_UNUSED err_t task_fd_pipe(u64 fd[2]);
+void task_set_wait(struct vfs_fd *fd, int flag);
 struct task *get_current_task(void);
 #endif // TASK_H

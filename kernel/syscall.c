@@ -40,7 +40,7 @@ err_t syscall_open(u64 *user_fd, char *str, size_t length, int flags) {
   err_t rc;
   if (ERROR_SUCCESS !=
       (rc = mmu_assign_user_ptr(user_fd, &tmp_fd, sizeof(int)))) {
-    task_fd_close(tmp_fd);
+    UNUSED(task_fd_close(tmp_fd));
     return rc;
   }
 
@@ -88,8 +88,7 @@ err_t syscall_exec(const char *str, u32 length, char *args[], u32 arg_lengths[],
     new_args[i] = sv_clone(tmp);
   }
 
-  task_exec(file, new_args, num_of_args);
-  return ERROR_SUCCESS;
+  return task_exec(file, new_args, num_of_args);
 }
 
 err_t syscall_mmap(void *addr, size_t length, int prot, int flags, int fd,

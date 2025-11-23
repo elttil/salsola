@@ -46,6 +46,7 @@ void setup_gs(void) {
 struct multiboot_tag *tags;
 u64 bspid_get();
 void kmain2(void) {
+  timer_init();
   assert(kmalloc_init());
 
   assert(msr_is_available());
@@ -53,24 +54,48 @@ void kmain2(void) {
   idt_init();
   //  assert(apic_enable());
 
-  assert(ps2_keyboard_init());
+  struct vfs_fd *root_disk = NULL;
+  for (struct multiboot_tag *tag = tags; tag->type != MULTIBOOT_TAG_TYPE_END;
+       tag = (struct multiboot_tag *)((multiboot_uint8_t *)tag +
+                                      ((tag->size + 7) & ~7))) {
+    if (MULTIBOOT_TAG_TYPE_FRAMEBUFFER == tag->type) {
+      display_driver_init((struct multiboot_tag_framebuffer_common *)tag);
+    } else if (MULTIBOOT_TAG_TYPE_MODULE == tag->type) {
+      struct multiboot_tag_module *module = (struct multiboot_tag_module *)tag;
+      size_t length = module->mod_end - module->mod_start;
+      void *address = mmu_map_frames((void *)module->mod_start, length);
+      root_disk = ramdisk_create(address, length);
+    }
+  }
+  kprintf("root_disk: %x\n", root_disk);
 
-  // smp_init(tags);
+  interrupts_disable();
+  smp_init(tags);
+
   mmu_remove_identity();
 
   assert(task_init());
 
-  vfs_add_mount(C_TO_SV("/dev"), ramfs_create());
+  assert(vfs_add_mount(C_TO_SV("/dev"), ramfs_create()));
 
   ahci_init();
   serial_add_file();
 
-  struct vfs_fd *sda_fd = vfs_open(C_TO_SV("/dev/sda"), 0, NULL);
+  if (!root_disk) {
+    root_disk = vfs_open(C_TO_SV("/dev/sda"), 0, NULL);
+  }
 
-  vfs_add_mount(C_TO_SV("/"), ext2_create(sda_fd));
+  assert(vfs_add_mount(C_TO_SV("/"), ext2_create(root_disk)));
 
-  csprng_add_random_device(C_TO_SV("/dev/random"));
-  csprng_add_random_device(C_TO_SV("/dev/urandom"));
+  assert(csprng_add_random_device(C_TO_SV("/dev/random")));
+  assert(csprng_add_random_device(C_TO_SV("/dev/urandom")));
+  timer_add_device(C_TO_SV("/dev/clock"));
+
+  framebuffer_add_device(C_TO_SV("/dev/window"));
+
+  kpoll_add_device();
+
+  assert(ps2_keyboard_init());
 
   setup_gs();
   syscall_init();
@@ -78,13 +103,21 @@ void kmain2(void) {
   pit_install();
   pit_set_count(2);
 
+  kprintf("Kernel star time until /init: %dms\n", timer_get_ms());
   u64 pid;
   assert(ERROR_SUCCESS == task_fork(&pid));
   if (0 == pid) {
-    task_exec(C_TO_SV("/bin/init"));
+    struct sv args[1];
+    args[0] = C_TO_SV("/bin/init");
+    UNUSED(task_exec(C_TO_SV("/bin/init"), args, 1));
+    kprintf("After exec\n");
+    for (;;)
+      ;
+    // task_exec(C_TO_SV("/bin/font"));
     assert(0);
   }
   for (;;) {
+    __asm__("sti");
     task_legacy_switch();
   }
 }

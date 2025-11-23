@@ -24,7 +24,14 @@ enum {
 };
 
 #endif // ERROR_H
+
+#define WARN_UNUSED __attribute__((warn_unused_result))
+
 typedef int err_t;
+
+#define UNUSED(expr)                                                           \
+  if (expr) {                                                                  \
+  }
 
 #define TRY(expr)                                                              \
   {                                                                            \
@@ -38,8 +45,8 @@ typedef int err_t;
   {                                                                            \
     err_t macro_error;                                                         \
     if (ERROR_SUCCESS != (macro_error = (expr))) {                             \
-      var = macro_error;                                                      \
-      goto label;                                                      \
+      var = macro_error;                                                       \
+      goto label;                                                              \
     }                                                                          \
   }
 
