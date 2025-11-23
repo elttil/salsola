@@ -1,6 +1,6 @@
 %define MAGIC         0xE85250D6
 %define ARCH          0
-%define HEADER_LENGTH 16+20
+%define HEADER_LENGTH (mbend-mbhead)
 %define CHECKSUM -(MAGIC+ARCH+HEADER_LENGTH)
 
 extern PML4T
@@ -21,21 +21,31 @@ PDT:
 PT:
 	resb 4096
 
+align 4096
 section .multiboot
-    align 16
 section .multiboot.data
-    align 4
+mbhead:
     dd MAGIC
     dd ARCH
     dd HEADER_LENGTH
     dd CHECKSUM
+	align 8
 	; Framebuffer
-    db 5 ; type
-    db 0 ; flags
-    dw 20 ; size
-    dw 1920 ; width
-    dw 1080 ; height
-    dw 32 ; depth
+framebuffer_tag_start:
+    dw 5 ; type
+    dw 0 ; flags
+    dq framebuffer_tag_end - framebuffer_tag_start ; size
+    dq 0 ; width
+    dq 0 ; height
+    dq 32 ; depth
+framebuffer_tag_end:
+	align 8
+mb2_tag_end_start:
+    dw 0                                    ; last tag
+    dw 0
+    dd mb2_tag_end_end - mb2_tag_end_start
+mb2_tag_end_end:
+	mbend:
 
 ; Access bits
 PRESENT        equ 1 << 7
