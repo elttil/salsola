@@ -15,18 +15,28 @@ u16 hertz;
 u16 pit_read_count(void) {
   u16 count = 0;
 
-  outb(PIT_IO_MODE_COMMAND, 0x0 /*0b00000000*/);
+  outb(PIT_IO_MODE_COMMAND, 0b0000000);
 
   count = inb(PIT_IO_CHANNEL_0);
-  count |= inb(PIT_IO_CHANNEL_0) << 8;
+  count |= ((u16)inb(PIT_IO_CHANNEL_0)) << 8;
 
   return count;
 }
 
-void pit_set_count(u16 _hertz) {
-  hertz = _hertz;
-  u16 divisor = 1193180 / hertz;
+void pit_sleep(u32 rounds) {
+  pit_set_count(0x00FF);
+  u16 max_count = pit_read_count();
+  u32 i = 0;
+  for (; i < rounds;) {
+    u16 new_value = pit_read_count();
+    if (new_value >= max_count) {
+      max_count = new_value;
+      i++;
+    }
+  }
+}
 
+void pit_set_count(u16 count) {
   /*
    * 0b00110110
    *   ^^
@@ -38,9 +48,11 @@ void pit_set_count(u16 _hertz) {
    *          ^
    * BCD - no
    */
-  outb(PIT_IO_MODE_COMMAND, 0x36 /*0b00110110*/);
-  outb(PIT_IO_CHANNEL_0, divisor & 0xFF);
-  outb(PIT_IO_CHANNEL_0, (divisor & 0xFF00) >> 8);
+  u8 mode = 1;
+  (void)mode;
+  outb(PIT_IO_MODE_COMMAND, 0x30 | (mode << 1) /*0b00110000*/);
+  outb(PIT_IO_CHANNEL_0, count & 0xFF);
+  outb(PIT_IO_CHANNEL_0, (count & 0xFF00) >> 8);
 }
 
 void int_clock(struct cpu_status *r) {

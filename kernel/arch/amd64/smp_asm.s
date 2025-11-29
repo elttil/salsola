@@ -95,6 +95,16 @@ ap_stage3:
 	mov ss, ax
 	mov rsp, stack_top
 	mov rbp, stack_top
+
+	; Enable SSE
+    mov rax, cr0
+    and ax, 0xFFFB
+    or ax, 0x2
+    mov cr0, rax
+    mov rax, cr4
+    or ax, 3 << 9
+    mov cr4, rax
+
 	mov rax, ap_startup
 	jmp rax
 

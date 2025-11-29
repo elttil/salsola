@@ -36,6 +36,7 @@ void idt_init(void);
 void interrupts_enable(void);
 void interrupts_disable(void);
 void handler_install(uint8_t num, interrupt_handler handler, int dpl);
+void set_handler(uint8_t num, interrupt_handler handler);
 void eoi(u8 irq);
 
 void isr0();

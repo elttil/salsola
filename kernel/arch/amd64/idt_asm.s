@@ -46,6 +46,7 @@ asm_syscall_handler:
 
 	mov rbp, rsp
 	mov rdi, rsp
+	swapgs
 	call syscall_handler
 
 	pop rbx
@@ -65,7 +66,6 @@ asm_syscall_handler:
 
 	pop rsp
 
-	swapgs
 	o64 sysret
 
 ; preserve rbx, rsp, rbp, r12, r13, r14, and r15;

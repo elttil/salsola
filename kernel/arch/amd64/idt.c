@@ -1,4 +1,5 @@
 #include <arch/amd64/idt.h>
+#include <arch/amd64/smp.h>
 #include <io.h>
 #include <kprintf.h>
 #include <stddef.h>
@@ -62,7 +63,13 @@ void pic_remap(int offset) {
   outb(SLAVE_PIC_DATA_PORT, a2);
 }
 
+void pic_disable(void) {
+  outb(MASTER_PIC_DATA_PORT, 0xff);
+  outb(SLAVE_PIC_DATA_PORT, 0xff);
+}
+
 void irq_set_mask(u8 irq_line) {
+
   u16 port;
   u8 value;
   port = (irq_line < 8) ? MASTER_PIC_DATA_PORT : SLAVE_PIC_DATA_PORT;
@@ -191,6 +198,8 @@ struct stackframe {
   u64 rip;
 };
 
+lock_t lock_fault;
+
 void *get_current_sbp(void);
 void dump_backtrace(u32 max_frames) {
   struct stackframe *stk = (void *)get_current_sbp();
@@ -202,13 +211,75 @@ void dump_backtrace(u32 max_frames) {
 }
 
 void page_fault(struct cpu_status *r) {
+  lock_acquire(&lock_fault);
   (void)r;
-  kprintf("Page fault\n");
+  kprintf("Page Fault\n");
   kprintf("CR2: %x\n", cr2_get());
   kprintf("IP: %x\n", r->iret_rip);
+  bool present = (r->error_code & (1 << 0)) ? 1 : 0;
+  bool write = (r->error_code & (1 << 1)) ? 1 : 0;
+  bool user = (r->error_code & (1 << 2)) ? 1 : 0;
+  bool reserved = (r->error_code & (1 << 3)) ? 1 : 0;
+  bool instruction_fetch = (r->error_code & (1 << 4)) ? 1 : 0;
+  bool protection_key = (r->error_code & (1 << 5)) ? 1 : 0;
+  kprintf("present: %d\n", present);
+  kprintf("write: %d\n", write);
+  kprintf("user: %d\n", user);
+  kprintf("reserved: %d\n", reserved);
+  kprintf("instruction_fetch: %d\n", instruction_fetch);
+  kprintf("protection_key: %d\n", protection_key);
   dump_backtrace(12);
+  lock_release(&lock_fault);
   for (;;)
     ;
+}
+
+void opcode_fault(struct cpu_status *r) {
+  lock_acquire(&lock_fault);
+  (void)r;
+  kprintf("Invalid opcode\n");
+  kprintf("Processor: %d\n", core_id_get());
+  kprintf("IP: %x\n", r->iret_rip);
+  struct task *task = get_current_task();
+  if (task) {
+    kprintf("Process: " SV_FMT "\n", SV_FMT_ARG(task->program_name));
+  }
+  kprintf("Instructions(10): \n", r->iret_rip);
+  u8 *ptr = (u8 *)r->iret_rip;
+  for (int i = 0; i < 10; i++) {
+    kprintf("0x%02x ", ptr[i]);
+  }
+  kprintf("\n");
+  kprintf("\n");
+  dump_backtrace(12);
+  lock_release(&lock_fault);
+  for (;;)
+    ;
+}
+
+void gpt_fault(struct cpu_status *r) {
+  lock_acquire(&lock_fault);
+  (void)r;
+  kprintf("General Protection Fault\n");
+  kprintf("Processor: %d\n", core_id_get());
+  kprintf("IP: %x\n", r->iret_rip);
+  kprintf("CS: %x\n", r->iret_cs);
+  kprintf("Error code: %x\n", r->error_code);
+  struct task *task = get_current_task();
+  if (task) {
+    kprintf("Process: " SV_FMT "\n", SV_FMT_ARG(task->program_name));
+  } else {
+    kprintf("No task\n");
+  }
+  dump_backtrace(12);
+  lock_release(&lock_fault);
+  for (;;)
+    ;
+}
+
+void set_handler(uint8_t num, interrupt_handler handler) {
+  set_idt_entry(num, (void *)isr_list[num], 0);
+  list_of_handlers[num] = (interrupt_handler)handler;
 }
 
 void handler_install(uint8_t num, interrupt_handler handler, int dpl) {
@@ -219,16 +290,26 @@ void handler_install(uint8_t num, interrupt_handler handler, int dpl) {
   list_of_handlers[num] = (interrupt_handler)handler;
 }
 
+bool idt_has_init = false;
+
 void idt_init(void) {
-  memset(list_of_handlers, 0, sizeof(void *) * 256);
-
+  lock_release(&lock_fault);
   pic_remap(0x20);
-  for (int i = 0; i < 0x10; i++) {
-    irq_set_mask(i);
-  }
+  // pic_disable();
+  if (!idt_has_init) {
+    memset(list_of_handlers, 0, sizeof(void *) * 256);
 
-  handler_install(0x0E, page_fault, 0);
+    for (int i = 0; i < 0x10; i++) {
+      irq_set_mask(i);
+    }
+
+    handler_install(0x0E, page_fault, 0);
+    handler_install(0x0D, gpt_fault, 0);
+    handler_install(0x06, opcode_fault, 0);
+
+    //    interrupts_enable();
+  }
+  idt_has_init = true;
 
   load_idt(idt);
-  interrupts_enable();
 }

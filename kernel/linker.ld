@@ -27,7 +27,6 @@ SECTIONS
     .multiboot.text : {
         *(.multiboot.text)
      }
-
 	
 	KERNEL_VMA = 0xffffff8000000000;
 

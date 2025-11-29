@@ -1,5 +1,6 @@
 #ifndef KMALLOC_H
 #define KMALLOC_H
+#include <error.h>
 #include <stddef.h>
 #include <typedefs.h>
 
@@ -11,6 +12,7 @@ void kmalloc_allocate_heap(void);
 void kmalloc_scan(void);
 
 void *kmalloc(size_t s);
+WARN_UNUSED err_t kmalloc2(void **ptr, size_t s);
 void *krealloc(void *ptr, size_t size);
 void *kreallocarray(void *ptr, size_t nmemb, size_t size);
 void *kallocarray(size_t nmemb, size_t size);

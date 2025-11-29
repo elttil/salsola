@@ -1,10 +1,10 @@
 //
-// Copyright (C) 2022 by Anton Kling <anton@kling.gg>
+// Copyright (C) 2022-2025 by Anton Kling <anton@kling.gg>
 //
 // SPDX-License-Identifier: 0BSD
 //
-#ifndef SHA1
-#define SHA1
+#ifndef SHA1_H
+#define SHA1_H
 #include <stddef.h>
 #include <stdint.h>
 
@@ -18,9 +18,12 @@ typedef struct SHA1_CTX {
   uint64_t len;
 } SHA1_CTX;
 
+void SHA1_OneShot(const void *data, uint64_t len,
+                  unsigned char *message_digest);
+
 void SHA1_Init(SHA1_CTX *ctx);
 void SHA1_Update(SHA1_CTX *ctx, const void *data, uint64_t len);
 void SHA1_Final(SHA1_CTX *ctx, unsigned char *message_digest);
 void SHA1_HMAC(unsigned char *message, uint64_t message_len, unsigned char *key,
                uint64_t key_len, uint8_t output[SHA1_LEN]);
-#endif
+#endif // SHA1_H

@@ -569,7 +569,7 @@ bool ahci_init(void) {
   struct pci_base_address_register bar;
   pci_get_bar(&device, 5, &bar);
 
-  u8 *HBA_base = mmu_map_frames((void *)bar.address, bar.size);
+  u8 *HBA_base = mmu_map_frames((void *)bar.address, bar.size, MMU_FLAG_PCD | MMU_FLAG_RW | MMU_FLAG_PRESENT);
   if (!HBA_base) {
     return 0;
   }

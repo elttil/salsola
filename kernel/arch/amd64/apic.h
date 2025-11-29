@@ -3,5 +3,6 @@
 
 bool apic_enable(void);
 bool apic_check(void);
-void* apic_get_base(void);
-void apic_set_base(void* apic);
+volatile void *apic_get_base(void);
+void apic_set_base(volatile void *apic);
+void apic_timer_install(void);

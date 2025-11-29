@@ -11,6 +11,7 @@ char *asm_files[] = {
 };
 
 char *c_files[] = {
+    "fs/ramdisk.c",
     "kpoll.c",
     "timer.c",
     "sb.c",
@@ -54,7 +55,9 @@ char *c_files[] = {
 
 #define ARRAY_LEN(array) ((sizeof(array)) / (sizeof(array[0])))
 
+#define USES_GCC 1
 #define CC "x86_64-salsola-gcc"
+// #define CC "cproc"
 #define AS "nasm"
 
 #define TARGET "salsola"
@@ -86,16 +89,19 @@ char *ld_flags[] = {
     "-nostdlib",
 };
 
+char *gcc_flags[] = {
+    "-mcmodel=large",
+    "-ffreestanding",
+    "-mgeneral-regs-only",
+    "-mno-red-zone",
+};
+
 char *c_flags[] = {
     "-std=c99",
     "-DKERNEL",
-    "-mcmodel=large",
-    "-ffreestanding",
     "-Wall",
     "-Wextra",
     "-Werror",
-    "-mgeneral-regs-only",
-    "-mno-red-zone",
     "-Wno-int-to-pointer-cast",
     "-Wno-pointer-to-int-cast",
     "-I./arch/includes/",
@@ -134,10 +140,15 @@ int build_c_file(char *file, char *object_output, Nob_Procs *procs,
   Nob_Cmd cmd = {0};
   nob_cmd_append(&cmd, CC, "-o", object_output, "-c", file);
   nob_da_append_many(&cmd, c_flags, ARRAY_LEN(c_flags));
+#if USES_GCC
+  nob_da_append_many(&cmd, gcc_flags, ARRAY_LEN(gcc_flags));
+#endif // USES_GCC
 
   if (ubsan) {
+#if USES_GCC
     nob_cmd_append(&cmd, "-fsanitize=vla-bound,shift-exponent,pointer-overflow,"
                          "shift,signed-integer-overflow,bounds");
+#endif // USES_GCC
   }
   if (release_build) {
     nob_cmd_append(&cmd, "-O2");
@@ -296,6 +307,9 @@ int main(int argc, char **argv) {
     nob_cmd_append(&cmd, "-ggdb");
   }
   nob_da_append_many(&cmd, c_flags, ARRAY_LEN(c_flags));
+#if USES_GCC
+  nob_da_append_many(&cmd, gcc_flags, ARRAY_LEN(gcc_flags));
+#endif // USES_GCC
 
   Nob_File_Paths objects = {0};
   Nob_File_Paths changed_files = {0};

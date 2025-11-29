@@ -6,6 +6,9 @@
 #include <stddef.h>
 #include <sv.h>
 
+// uint16_t *text_mode_ptr = (u16 *)0xB8000;
+// uintptr_t index = 0;
+
 #define PORT 0x3f8 // COM1
 
 int serial_init(void) {
@@ -78,5 +81,8 @@ void serial_print_char(char a) {
   for (; 0 == is_transmit_empty();)
     ;
 
+  //  text_mode_ptr[index] = 0xF << 8;
+  //  text_mode_ptr[index] |= a;
+  //  index++;
   outb(PORT, a);
 }

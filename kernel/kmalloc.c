@@ -245,12 +245,21 @@ void kfree(void *p) {
 }
 #endif // KMALLOC_DEBUG
 
-void *kmalloc(size_t s) {
+err_t kmalloc2(void **ptr, size_t s) {
   void *rc = int_kmalloc(s);
   if (NULL == rc) {
-    return NULL;
+    return ERROR_NO_MEMORY;
   }
   prng_get_pseudorandom((void *)rc, s);
+  ASSIGN_PTR(ptr, rc);
+  return ERROR_SUCCESS;
+}
+
+void *kmalloc(size_t s) {
+  void *rc;
+  if (ERROR_SUCCESS != kmalloc2(&rc, s)) {
+    return NULL;
+  }
   return rc;
 }
 

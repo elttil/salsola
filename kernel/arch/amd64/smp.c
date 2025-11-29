@@ -1,9 +1,11 @@
+#include <arch/amd64/apic.h>
 #include <arch/amd64/gdt.h>
+#include <arch/amd64/idt.h>
 #include <arch/amd64/msr.h>
 #include <arch/amd64/regs.h>
 #include <arch/amd64/smp.h>
 #include <assert.h>
-#include <kprintf.h>
+#include <drivers/pit.h>
 #include <lock.h>
 #include <mmu.h>
 #include <string.h>
@@ -71,17 +73,13 @@ bool rsdp_checksum(u8 *src, size_t size) {
 u8 *lapic_ptr = NULL;
 
 void mdelay(int s) {
+  pit_sleep(5);
   (void)s;
-  //  for (int i = 0; i < 10000; i++) {
-  //    kprintf(".");
-  //  }
 }
 
 void udelay(int s) {
+  pit_sleep(5);
   (void)s;
-  //  for (int i = 0; i < 100; i++) {
-  //    kprintf(".");
-  //  }
 }
 
 volatile u8 bspdone = 0;
@@ -114,7 +112,6 @@ void enable_core(int core) {
   // do not start BSP, that's already running this code
   // #if 0
   if (core == bspid) { // FIXME: Incorrect
-    kprintf("CORE Already in use\n");
     return;
   }
   lock_acquire(&smp_lock);
@@ -158,14 +155,15 @@ bool rsdt_find_signature(struct RSDT *rsdt, char *signature, void **out) {
 
   const size_t length = strlen(signature);
   for (int i = 0; i < entries; i++) {
-    void *virtual = mmu_map_frames((void *)rsdt->PointerToOtherSDT[i],
-                                   sizeof(struct ACPISDTHeader));
+    void *virtual = mmu_map_frames(
+        (void *)rsdt->PointerToOtherSDT[i], sizeof(struct ACPISDTHeader),
+        MMU_FLAG_PCD | MMU_FLAG_RW | MMU_FLAG_PRESENT);
     struct ACPISDTHeader *h = (struct ACPISDTHeader *)virtual;
     if (!strncmp(h->Signature, signature, length)) {
       PTR_ASSIGN(out, h);
       return true;
     }
-    mmu_unmap_frames(virtual, sizeof(struct ACPISDTHeader));
+    mmu_unmap_frames(virtual, sizeof(struct ACPISDTHeader), false);
   }
 
   return false;
@@ -177,17 +175,45 @@ u8 core_id_get(void) {
   return bspid_get();
 }
 
+// extern volatile struct task *task_head;
+struct task *get_task_head(void);
+void setup_gs(void);
+void setup_syscall(void);
+u64 set_kernel_stack(void *stack);
 void core_main() {
+  gdt_init();
+  idt_init();
+
+  setup_gs();
+  set_kernel_stack((void *)0xffffff8000000000 - 0x1000 /*Guard page*/);
+  setup_syscall();
   lock_release(&smp_lock);
   mmu_remove_identity();
 
-  kprintf("CORE MAIN\n");
+  __asm__("cli");
+
+  for (; !get_task_head();)
+    ;
+
+  __asm__("cli");
+  task_new_core_init();
+
+  // TODO: Is this required?
+  apic_enable();
+  apic_timer_install();
+
+  u64 i = 0;
+  for (;; i++) {
+    __asm__("cli");
+    task_legacy_switch();
+  }
+
   for (;;)
     ;
 }
 
 void ap_startup() {
-  kprintf("\nap_startup bspid: %d\n", bspid_get());
+  __asm__("cli");
   mmu_init_for_new_core(core_main);
   for (;;)
     ;
@@ -208,7 +234,8 @@ void smp_init(struct multiboot_tag *tags) {
     assert(rsdp_checksum((void *)rsdp, sizeof(*rsdp)));
 
     void *mapped_frames =
-        mmu_map_frames((void *)rsdp->RsdtAddress, sizeof(struct ACPISDTHeader));
+        mmu_map_frames((void *)rsdp->RsdtAddress, sizeof(struct ACPISDTHeader),
+                       MMU_FLAG_PCD | MMU_FLAG_RW | MMU_FLAG_PRESENT);
 
     struct RSDT *header = (struct RSDT *)mapped_frames;
     // TODO: Make sure this check does not pass page boundaries(the
@@ -217,7 +244,8 @@ void smp_init(struct multiboot_tag *tags) {
 
     struct MADT *madt;
     assert(rsdt_find_signature(header, "APIC", (void **)&madt));
-    lapic_ptr = mmu_map_frames((void *)madt->local_apic_address, 0x1000);
+    lapic_ptr = mmu_map_frames((void *)madt->local_apic_address, 0x1000,
+                               MMU_FLAG_PCD | MMU_FLAG_RW | MMU_FLAG_PRESENT);
 
     for (struct madt_entry *p = madt->entries;
          ((uintptr_t)p - (uintptr_t)madt) < madt->h.Length;) {

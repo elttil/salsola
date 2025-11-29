@@ -6,6 +6,8 @@
 #include <kprintf.h>
 #include <mmu.h>
 
+#include <csprng.h>
+
 struct display_info {
   u8 *framebuffer;
   u32 framebuffer_physical;
@@ -89,7 +91,8 @@ bool display_driver_init(struct multiboot_tag_framebuffer_common *mbi) {
 
   vbe_info.framebuffer_physical = mbi->framebuffer_addr;
   vbe_info.framebuffer =
-      mmu_map_frames((void *)mbi->framebuffer_addr, vbe_info.framebuffer_size);
+      mmu_map_frames((void *)mbi->framebuffer_addr, vbe_info.framebuffer_size,
+                     MMU_FLAG_RW | MMU_FLAG_PCD | MMU_FLAG_PRESENT);
   if (!vbe_info.framebuffer) {
     return false;
   }
@@ -100,6 +103,9 @@ bool display_driver_init(struct multiboot_tag_framebuffer_common *mbi) {
 
   buffer_init(&vbe_info.buffer, vbe_info.framebuffer,
               vbe_info.framebuffer_size);
+
+  // TODO: tmp
+  csprng_get_random(vbe_info.framebuffer, vbe_info.framebuffer_size);
 
   return true;
 }

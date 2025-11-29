@@ -1,30 +1,60 @@
 #include <assert.h>
 #include <csprng.h>
 #include <drivers/ahci.h>
+#include <drivers/framebuffer.h>
 #include <drivers/pit.h>
 #include <drivers/ps2_keyboard.h>
 #include <drivers/serial.h>
 #include <fs/ext2.h>
+#include <fs/ramdisk.h>
 #include <fs/ramfs.h>
 #include <fs/vfs.h>
+#include <hwrng.h>
 #include <kmalloc.h>
 #include <kprintf.h>
+#include <log.h>
 #include <mmu.h>
 #include <prng.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include <sys/kpoll.h>
 #include <syscall.h>
 #include <task.h>
+#include <timer.h>
 
 #include <arch/amd64/apic.h>
 #include <arch/amd64/gdt.h>
 #include <arch/amd64/idt.h>
 #include <arch/amd64/msr.h>
 #include <arch/amd64/smp.h>
-#include <hwrng.h>
+
+#include <crypto/SHA1/sha1.h>
 
 #include "multiboot2.h"
+
+void debug_hash_file(struct sv file) {
+  kprintf("Hashing: " SV_FMT "\n", SV_FMT_ARG(file));
+  SHA1_CTX ctx;
+  SHA1_Init(&ctx);
+  struct vfs_fd *fd = vfs_open(file, 0, NULL);
+  for (;;) {
+    char buffer[1001];
+    size_t rc = vfs_read(fd, buffer, 1001, NULL);
+    if (0 == rc) {
+      break;
+    }
+    SHA1_Update(&ctx, buffer, rc);
+  }
+  unsigned char digest[SHA1_LEN];
+  SHA1_Final(&ctx, digest);
+
+  kprintf("Hash: ");
+  for (int i = 0; i < SHA1_LEN; i++) {
+    kprintf("%02x", digest[i]);
+  }
+  kprintf("\n");
+}
 
 void swapgs(void);
 // TODO: Move to different file.
@@ -52,7 +82,8 @@ void kmain2(void) {
   assert(msr_is_available());
 
   idt_init();
-  //  assert(apic_enable());
+
+  assert(apic_enable());
 
   struct vfs_fd *root_disk = NULL;
   for (struct multiboot_tag *tag = tags; tag->type != MULTIBOOT_TAG_TYPE_END;
@@ -63,11 +94,11 @@ void kmain2(void) {
     } else if (MULTIBOOT_TAG_TYPE_MODULE == tag->type) {
       struct multiboot_tag_module *module = (struct multiboot_tag_module *)tag;
       size_t length = module->mod_end - module->mod_start;
-      void *address = mmu_map_frames((void *)module->mod_start, length);
+      void *address = mmu_map_frames((void *)module->mod_start, length,
+                                     MMU_FLAG_RW | MMU_FLAG_PRESENT);
       root_disk = ramdisk_create(address, length);
     }
   }
-  kprintf("root_disk: %x\n", root_disk);
 
   interrupts_disable();
   smp_init(tags);
@@ -100,8 +131,7 @@ void kmain2(void) {
   setup_gs();
   syscall_init();
 
-  pit_install();
-  pit_set_count(2);
+  apic_timer_install();
 
   kprintf("Kernel star time until /init: %dms\n", timer_get_ms());
   u64 pid;
@@ -117,7 +147,6 @@ void kmain2(void) {
     assert(0);
   }
   for (;;) {
-    __asm__("sti");
     task_legacy_switch();
   }
 }

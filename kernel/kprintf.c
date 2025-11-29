@@ -3,11 +3,11 @@
 #include <kprintf.h>
 #include <lock.h>
 #include <math.h>
+#include <sb.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <string.h>
 #include <typedefs.h>
-#include <sb.h>
 
 #define TAB_SIZE 8
 

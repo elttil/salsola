@@ -11,11 +11,16 @@
 #include <sys/mman.h>
 #include <task.h>
 
-DEFINE_LIST_FUNCTIONS(list_fd, struct vfs_fd *)
-DEFINE_LIST_FUNCTIONS(list_memory, struct memory_mapping *)
+DEFINE_LIST_FUNCTIONS(list_fd, struct vfs_fd *);
+DEFINE_LIST_FUNCTIONS(list_memory, struct memory_mapping *);
 
+lock_t task_list_lock;
 struct task *task_head = NULL;
 u64 active_pid = 0;
+
+struct task *get_task_head(void) {
+  return task_head;
+}
 
 static void set_current_task(struct task *task) {
   kernel_threads[core_id_get()].current_task = task;
@@ -26,19 +31,26 @@ struct task *get_current_task(void) {
 }
 
 bool task_init(void) {
-  task_head = kmalloc(sizeof(struct task));
-  if (!task_head) {
+  lock_release(&task_list_lock);
+
+  lock_acquire(&task_list_lock);
+  err_t err = kmalloc2((void **)&task_head, sizeof(struct task));
+  if (ERROR_SUCCESS != err) {
     return false;
   }
+  task_head->in_use = true;
   task_head->parent = NULL;
   task_head->next = NULL;
   task_head->pid = active_pid;
   task_head->active_kpoll = NULL;
+  task_head->program_name = sv_clone(C_TO_SV("KERNEL"));
   list_fd_init(&task_head->fds);
   list_memory_init(&task_head->mappings);
   active_pid++;
 
   task_head->directory = mmu_get_active_directory();
+
+  lock_release(&task_list_lock);
 
   set_current_task(task_head);
 
@@ -221,8 +233,9 @@ WARN_UNUSED err_t task_munmap(void *addr, size_t length) {
 
 WARN_UNUSED err_t task_mmap(void *addr, size_t length, int prot, int flags,
                             int fd, off_t offset, void **out) {
-  struct memory_mapping *map = kmalloc(sizeof(struct memory_mapping));
-  if (!map) {
+  struct memory_mapping *map;
+  err_t err = kmalloc2((void **)&map, sizeof(struct memory_mapping));
+  if (ERROR_SUCCESS != err) {
     return ERROR_NO_MEMORY;
   }
 
@@ -303,7 +316,8 @@ WARN_UNUSED static err_t setup_stack(void **out, u64 stack_length,
 }
 
 err_t task_exec(struct sv file, struct sv *args, u32 num_of_args) {
-  struct list_memory_ctx *maps = &get_current_task()->mappings;
+  struct task *task = get_current_task();
+  struct list_memory_ctx *maps = &task->mappings;
   for (u64 j = 0;; j++) {
     struct memory_mapping *map;
     if (!list_memory_get(maps, j, &map)) {
@@ -317,9 +331,12 @@ err_t task_exec(struct sv file, struct sv *args, u32 num_of_args) {
 
   mmu_unmap_frames(0, 0xF000000000, true);
 
+  task->program_name = sv_clone(file);
+
   void *program_end;
   void *entry;
-  TRY(elf_load_file(file, &program_end, &entry));
+  // FIXME: This is a bad state to crash in. The process should just exit
+  assert(ERROR_SUCCESS == elf_load_file(file, &program_end, &entry));
 
   uintptr_t stack_length = 0x5000;
   void *stack_ptr;
@@ -334,12 +351,15 @@ err_t task_fork(u64 *pid) {
   struct task *parent = get_current_task();
   assert(parent);
 
-  struct task *task = kmalloc(sizeof(struct task));
-  if (!task) {
+  struct task *task;
+  err_t err = kmalloc2((void **)&task, sizeof(struct task));
+  if (ERROR_SUCCESS != err) {
     return ERROR_NO_MEMORY;
   }
 
+  task->in_use = false;
   task->parent = parent;
+  task->program_name = sv_clone(parent->program_name);
 
   hint_assert(!parent->active_kpoll);
   task->active_kpoll = NULL;
@@ -366,6 +386,8 @@ err_t task_fork(u64 *pid) {
     fd->outside_references++;
   }
 
+  lock_acquire(&task_list_lock);
+
   task->next = task_head;
   task_head = task;
 
@@ -373,11 +395,14 @@ err_t task_fork(u64 *pid) {
   // the child. It also calls the function task_create_directory() to
   // create a new directory.
   u64 _pid = weird_switch(task, parent);
+
+  lock_release(&task_list_lock);
   ASSIGN_PTR(pid, _pid);
   return ERROR_SUCCESS;
 }
 
 void task_switch(struct task *task) {
+  __asm__("sti");
   struct task *old = get_current_task();
   set_current_task(task);
 
@@ -417,13 +442,73 @@ WARN_UNUSED static bool is_halted(struct task *task) {
 }
 
 void task_legacy_switch(void) {
-  interrupts_disable();
+  // interrupts_disable();
+
+  lock_acquire(&task_list_lock);
+
   struct task *new_task = get_current_task();
-  do {
+  for (;;) {
     new_task = task_next(new_task);
-  } while (is_halted(new_task));
+
+    // kprintf("new_task on core: %d\n", core_id_get());
+    if (new_task == get_current_task()) {
+      break;
+    }
+
+    if (new_task->in_use) {
+      continue;
+    }
+
+    if (is_halted(new_task)) {
+      continue;
+    }
+    break;
+  }
+
   if (new_task == get_current_task()) {
+    lock_release(&task_list_lock);
     return;
   }
+
+  get_current_task()->in_use = false;
+  new_task->in_use = true;
+
+  lock_release(&task_list_lock);
+
+  task_switch(new_task);
+}
+
+void task_new_core_init(void) {
+  struct task *new_task = task_head;
+  for (;;) {
+  redo:
+    lock_acquire(&task_list_lock);
+    new_task = task_head;
+
+    for (;;) {
+      new_task = task_next(new_task);
+
+      if (new_task == task_head) {
+        lock_release(&task_list_lock);
+        goto redo;
+      }
+
+      if (new_task->in_use) {
+        continue;
+      }
+
+      if (is_halted(new_task)) {
+        continue;
+      }
+      break;
+    }
+
+    new_task->in_use = true;
+
+    lock_release(&task_list_lock);
+    break;
+  }
+
+  set_current_task(new_task);
   task_switch(new_task);
 }

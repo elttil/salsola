@@ -186,14 +186,13 @@ void *mmu_map_frames_to_region(void *src, size_t length, void *virtual,
   return virtual;
 }
 
-void *mmu_map_frames(void *src, size_t length) {
+void *mmu_map_frames(void *src, size_t length, u16 flags) {
   void *virtual = mmu_find_free_virtual_region(length);
 
   uintptr_t p = (uintptr_t)src;
   for (size_t i = 0; i < length; i += PAGE_SIZE) {
     assert(check_virtual_region_is_free((void *)((uintptr_t) virtual + i), NULL,
-                                        true, true, (void *)p,
-                                        MMU_FLAG_RW | MMU_FLAG_PRESENT));
+                                        true, true, (void *)p, flags));
     p += PAGE_SIZE;
   }
 
@@ -331,7 +330,7 @@ void *ksbrk_physical(size_t length, void **physical) {
     *physical = r;
   }
 
-  prng_get_pseudorandom(rc, align_up_int(length, PAGE_SIZE));
+  memset(rc, 0, align_up_int(length, PAGE_SIZE));
   return rc;
 }
 
@@ -584,10 +583,10 @@ void mmu_update_stack(void (*function)()) {
 }
 
 void copy_frame(void *physical_dst, void *physical_src) {
-  void *dst =
-      mmu_map_frames((void *)((uintptr_t)physical_dst & (~0xFFF)), PAGE_SIZE);
-  void *src =
-      mmu_map_frames((void *)((uintptr_t)physical_src & (~0xFFF)), PAGE_SIZE);
+  void *dst = mmu_map_frames((void *)((uintptr_t)physical_dst & (~0xFFF)),
+                             PAGE_SIZE, MMU_FLAG_RW | MMU_FLAG_PRESENT);
+  void *src = mmu_map_frames((void *)((uintptr_t)physical_src & (~0xFFF)),
+                             PAGE_SIZE, MMU_FLAG_RW | MMU_FLAG_PRESENT);
 
   assert(((uintptr_t)physical_dst & (~0xFFF)) ==
          ((uintptr_t)mmu_virtual_to_physical(dst, NULL)));
@@ -772,6 +771,14 @@ void mmu_init_for_new_core(void (*main)(void)) {
   set_stack_and_jump(new_stack, main);
 }
 
+void set_frame_region(void *start, void *end, bool value) {
+  for (uint32_t p = (uintptr_t)start; p < (uintptr_t)end; p += 0x1000) {
+    if (!set_frame((void *)p, value)) {
+      break;
+    }
+  }
+}
+
 int mmu_init(void *multiboot_header) {
   struct mmu_directory *active_directory = &orig_active_directory;
   kernel_threads[core_id_get()].active_directory = active_directory;
@@ -786,6 +793,7 @@ int mmu_init(void *multiboot_header) {
   memset(frames, 0xFF, sizeof(frames));
 
   uintptr_t addr = (uintptr_t)multiboot_header + 0xFFFFFF8000000000;
+
   for (struct multiboot_tag *tag = (struct multiboot_tag *)(addr + 8);
        tag->type != MULTIBOOT_TAG_TYPE_END;
        tag = (struct multiboot_tag *)((multiboot_uint8_t *)tag +
@@ -805,14 +813,20 @@ int mmu_init(void *multiboot_header) {
       if (MULTIBOOT_MEMORY_AVAILABLE != entry->type) {
         continue;
       }
-      // FIXME: This is garbage, just memset
-      for (uint32_t p = entry->addr; p < entry->addr + entry->len;
-           p += 0x1000) {
-        if (!set_frame((void *)p, false)) {
-          break;
-        }
-      }
+      set_frame_region((void *)entry->addr, (void *)(entry->addr + entry->len),
+                       false);
       assert(0 == entry->zero);
+    }
+  }
+  for (struct multiboot_tag *tag = (struct multiboot_tag *)(addr + 8);
+       tag->type != MULTIBOOT_TAG_TYPE_END;
+       tag = (struct multiboot_tag *)((multiboot_uint8_t *)tag +
+                                      ((tag->size + 7) & ~7))) {
+    if (tag->type == MULTIBOOT_TAG_TYPE_MODULE) {
+      struct multiboot_tag_module *module = (struct multiboot_tag_module *)tag;
+
+      set_frame_region((void *)module->mod_start, (void *)module->mod_end,
+                       true);
     }
   }
 
@@ -846,6 +860,9 @@ int mmu_init(void *multiboot_header) {
         struct PT *pt = (struct PT *)(p & ~(0xFFF));
         pdt->pt[c] = pt;
         for (int k = 0; k < 512; k++) {
+          if (i == 511) {
+            break;
+          }
           uintptr_t physical = pt->page[k] & ~(0xFFF);
           set_frame((void *)physical, true);
         }

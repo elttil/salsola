@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <fs/vfs.h>
 #include <kmalloc.h>
+#include <kprintf.h>
 #include <stdbool.h>
 #include <task.h>
 

@@ -245,8 +245,8 @@ read_block_redo:
 
   bool is_new = false;
   if (!cache->in_use) {
-    cache->buffer = kmalloc(ctx->block_byte_size);
-    if (!cache->buffer) {
+    err_t err = kmalloc2((void **)&cache->buffer, ctx->block_byte_size);
+    if (ERROR_SUCCESS != err) {
       reuse_cache = true;
       goto read_block_redo;
     }
@@ -687,12 +687,14 @@ static err_t parse_superblock(struct ext2_ctx *ctx) {
 }
 
 struct vfs_mount *ext2_create(struct vfs_fd *fd) {
-  struct vfs_mount *mount = kmalloc(sizeof(struct vfs_mount));
-  if (!mount) {
+  struct vfs_mount *mount;
+  err_t err = kmalloc2((void **)&mount, sizeof(struct vfs_mount));
+  if (ERROR_SUCCESS != err) {
     return NULL;
   }
-  struct ext2_ctx *ctx = kmalloc(sizeof(struct ext2_ctx));
-  if (!ctx) {
+  struct ext2_ctx *ctx;
+  err = kmalloc2((void **)&ctx, sizeof(struct ext2_ctx));
+  if (ERROR_SUCCESS != err) {
     kfree(mount);
     return NULL;
   }
@@ -715,8 +717,8 @@ struct vfs_mount *ext2_create(struct vfs_fd *fd) {
     return NULL;
   }
 
-  ctx->pre_allocated_block = kmalloc(ctx->block_byte_size);
-  if (!ctx->pre_allocated_block) {
+  err = kmalloc2((void **)&ctx->pre_allocated_block, ctx->block_byte_size);
+  if (ERROR_SUCCESS != err) {
     kfree(ctx);
     kfree(mount);
     return NULL;
