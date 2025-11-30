@@ -25,14 +25,14 @@ u16 pit_read_count(void) {
 
 void pit_sleep(u32 rounds) {
   pit_set_count(0x00FF);
-  u16 max_count = pit_read_count();
+  u16 last_value = pit_read_count();
   u32 i = 0;
   for (; i < rounds;) {
     u16 new_value = pit_read_count();
-    if (new_value >= max_count) {
-      max_count = new_value;
+    if (new_value > last_value) {
       i++;
     }
+    last_value = new_value;
   }
 }
 
@@ -48,9 +48,10 @@ void pit_set_count(u16 count) {
    *          ^
    * BCD - no
    */
-  u8 mode = 1;
+  u8 mode = 0b001;
   (void)mode;
-  outb(PIT_IO_MODE_COMMAND, 0x30 | (mode << 1) /*0b00110000*/);
+  outb(PIT_IO_MODE_COMMAND,
+       0b00110000 | (mode << 1) /*0b00110000 | (mode << 1)*/);
   outb(PIT_IO_CHANNEL_0, count & 0xFF);
   outb(PIT_IO_CHANNEL_0, (count & 0xFF00) >> 8);
 }
