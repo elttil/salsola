@@ -104,8 +104,5 @@ bool display_driver_init(struct multiboot_tag_framebuffer_common *mbi) {
   buffer_init(&vbe_info.buffer, vbe_info.framebuffer,
               vbe_info.framebuffer_size);
 
-  // TODO: tmp
-  csprng_get_random(vbe_info.framebuffer, vbe_info.framebuffer_size);
-
   return true;
 }
