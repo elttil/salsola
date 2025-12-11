@@ -33,6 +33,12 @@ err_t sa_close(u64 fd);
 
 err_t sa_exec(struct sv file, struct sv *args, u32 number_of_args);
 int execvp(const char *file, char *const argv[]);
+int execv(const char *pathname, char *const argv[]);
 
 void *sbrk(intptr_t increment);
+
+int pipe(int fd[2]);
+err_t sa_pipe(u64 fd[2]);
+
+pid_t getpid(void);
 #endif
