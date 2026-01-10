@@ -5,7 +5,6 @@
 #include <elf.h>
 #include <fs/pipe.h>
 #include <kmalloc.h>
-#include <kprintf.h>
 #include <log.h>
 #include <stddef.h>
 #include <sys/mman.h>
@@ -423,17 +422,13 @@ err_t task_variable_add(struct task *task, struct sv key, struct sv value) {
 }
 
 static bool variables_clone(struct task *task, struct task *parent) {
-  kprintf("Waiting\n");
   lock_acquire(&parent->variable_lock);
-  kprintf("Done\n");
   task->variables = NULL;
   task->variables_num = 0;
   task->variables_capacity = 0;
   for (size_t i = 0; i < parent->variables_num; i++) {
     struct environment_variable env = parent->variables[i];
-    kprintf("Waiting2\n");
     lock_acquire(&env.lock);
-    kprintf("Done2\n");
     if (!env.is_used) {
       lock_release(&env.lock);
       continue;
