@@ -18,6 +18,7 @@ DEFINE_LIST_STRUCT(list_memory, struct memory_mapping *)
 #include <mmu.h>
 #include <stdbool.h>
 #include <sv.h>
+#include <sb.h>
 #include <sys/kpoll.h>
 #include <sys/types.h>
 #include <task.h>
@@ -39,6 +40,14 @@ struct wait {
   int flag;
 };
 
+struct environment_variable {
+	struct sv key;
+	struct sb value;
+	bool is_used;
+	size_t open_ref_count;
+	lock_t lock;
+};
+
 struct task {
   // NOTE: Assembly code depends upon the TCB being at the start
   struct tcb tcb;
@@ -46,6 +55,12 @@ struct task {
   void *program_stop;
 
   bool in_use;
+
+  u64 outside_reference;
+  lock_t variable_lock;
+  struct environment_variable *variables;
+  size_t variables_num;
+  size_t variables_capacity;
 
   struct sv program_name;
   struct list_fd_ctx fds;
@@ -83,4 +98,7 @@ WARN_UNUSED err_t task_fd_pipe(u64 fd[2]);
 void task_set_wait(struct vfs_fd *fd, int flag);
 struct task *get_current_task(void);
 void task_new_core_init(void);
+err_t task_get_from_pid(u64 pid, struct task**out);
+WARN_UNUSED err_t task_variable_get(struct task *task, struct sv key, struct environment_variable **out, bool assign);
+WARN_UNUSED err_t task_variable_add(struct task *task, struct sv key, struct sv value);
 #endif // TASK_H

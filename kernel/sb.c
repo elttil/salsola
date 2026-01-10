@@ -133,6 +133,39 @@ int sb_prepend_buffer(struct sb *ctx, const char *buffer, size_t length) {
   return 1;
 }
 
+err_t sb_read(struct sb *ctx, void *buffer, size_t length,
+                    size_t offset, size_t *rc) {
+  if(offset > ctx->length) {
+	ASSIGN_PTR(rc, 0);
+	return ERROR_SUCCESS;
+  }
+
+  size_t read_len = min(length, ctx->length-offset);
+  memcpy(buffer, ctx->string+offset, read_len);
+  ASSIGN_PTR(rc, read_len);
+  return ERROR_SUCCESS;
+}
+
+err_t sb_write(struct sb *ctx, const void *buffer, size_t length,
+                    size_t offset, size_t *rc) {
+  if(offset > ctx->length) {
+	return ERROR_WRITE_EXCEEDS_BOUNDS;
+  }
+
+  // FIXME: HANDLE OVERFLOW
+  if(offset+length > ctx->capacity) {
+	if(!sb_increase_buffer(ctx, offset+length - ctx->capacity)) {
+		return ERROR_NO_MEMORY;
+	}
+  }
+
+  ctx->length = max(ctx->length, offset+length);
+
+  memcpy(ctx->string+offset, buffer, length);
+  ASSIGN_PTR(rc, length);
+  return ERROR_SUCCESS;
+}
+
 int sb_append_buffer(struct sb *ctx, const char *buffer, size_t length) {
   if (ctx->to_ignore >= length) {
     ctx->to_ignore -= length;

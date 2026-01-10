@@ -3,6 +3,7 @@
 #include <sv.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <error.h>
 
 struct sb {
   char *string;
@@ -28,4 +29,8 @@ int sb_append_buffer(struct sb *ctx, const char *buffer, size_t length);
 int sb_append_sv(struct sb *ctx, struct sv sv);
 int sb_prepend_sv(struct sb *ctx, struct sv sv);
 int sb_prepend_buffer(struct sb *ctx, const char *buffer, size_t length);
+err_t sb_read(struct sb *ctx, void *buffer, size_t length,
+                    size_t offset, size_t *rc);
+err_t sb_write(struct sb *ctx, const void *buffer, size_t length,
+                    size_t offset, size_t *rc);
 #endif

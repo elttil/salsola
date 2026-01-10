@@ -38,6 +38,10 @@ bool task_init(void) {
   if (ERROR_SUCCESS != err) {
     return false;
   }
+  task_head->variables = NULL;
+  task_head->variables_num = 0;
+  task_head->variables_capacity = 0;
+  lock_release(&task_head->variable_lock);
   task_head->in_use = true;
   task_head->parent = NULL;
   task_head->next = NULL;
@@ -57,6 +61,23 @@ bool task_init(void) {
   return true;
 }
 
+err_t task_get_from_pid(u64 pid, struct task **out) {
+  lock_acquire(&task_list_lock);
+  struct task *p = task_head;
+  for (; p; p = p->next) {
+    if (p->pid == pid) {
+      if (out) {
+        *out = p;
+        p->outside_reference++;
+      }
+      lock_release(&task_list_lock);
+      return ERROR_SUCCESS;
+    }
+  }
+  lock_release(&task_list_lock);
+  return ERROR_TASK_NOT_FOUND;
+}
+
 err_t task_fd_dup2(u64 oldfd, u64 newfd) {
   if (oldfd == newfd) {
     return ERROR_SUCCESS;
@@ -72,7 +93,7 @@ err_t task_fd_dup2(u64 oldfd, u64 newfd) {
   // TODO: Maybe don't do the task_fd_close if this fails?
   TRY(list_fd_set(&task->fds, newfd, fd_ptr));
 
-  fd_ptr->outside_references++;
+  fd_ptr->references++;
   return ERROR_SUCCESS;
 }
 
@@ -138,6 +159,7 @@ err_t task_fd_close(u64 fd) {
   struct vfs_fd *fd_ptr;
   GET_FD(fd, &fd_ptr);
   vfs_close(fd_ptr);
+  list_fd_set(&get_current_task()->fds, fd, NULL);
   return ERROR_SUCCESS;
 }
 
@@ -347,6 +369,83 @@ err_t task_exec(struct sv file, struct sv *args, u32 num_of_args) {
   assert(0);
 }
 
+err_t task_variable_get(struct task *task, struct sv key,
+                        struct environment_variable **out, bool assign) {
+  lock_acquire(&task->variable_lock);
+  for (size_t i = 0; i < task->variables_num; i++) {
+    if (sv_eq(key, task->variables[i].key)) {
+      ASSIGN_PTR(out, &task->variables[i]);
+      if (assign) {
+        lock_acquire(&task->variables[i].lock);
+        task->variables[i].open_ref_count++;
+        lock_release(&task->variables[i].lock);
+      }
+      lock_release(&task->variable_lock);
+      return ERROR_SUCCESS;
+    }
+  }
+  lock_release(&task->variable_lock);
+  return ERROR_VARIABLE_NOT_FOUND;
+}
+
+err_t task_variable_add(struct task *task, struct sv key, struct sv value) {
+  if (ERROR_SUCCESS == task_variable_get(task, key, NULL, false)) {
+    return ERROR_VARIABLE_ALREADY_EXISTS;
+  }
+
+  lock_acquire(&task->variable_lock);
+  if (task->variables_num >= task->variables_capacity) {
+    size_t cap = task->variables_capacity + 32;
+    void *n = kreallocarray(task->variables,
+                            sizeof(struct environment_variable), cap);
+    if (!n) {
+      lock_release(&task->variable_lock);
+      return ERROR_NO_MEMORY;
+    }
+    task->variables = n;
+    task->variables_capacity = cap;
+  }
+
+  struct environment_variable env;
+  env.key = sv_clone(key);
+
+  sb_init(&env.value);
+  assert(sb_append_sv(&env.value, value));
+
+  env.is_used = true;
+  env.open_ref_count = 0;
+  lock_release(&env.lock);
+
+  task->variables[task->variables_num] = env;
+  task->variables_num++;
+  lock_release(&task->variable_lock);
+  return ERROR_SUCCESS;
+}
+
+static bool variables_clone(struct task *task, struct task *parent) {
+  kprintf("Waiting\n");
+  lock_acquire(&parent->variable_lock);
+  kprintf("Done\n");
+  task->variables = NULL;
+  task->variables_num = 0;
+  task->variables_capacity = 0;
+  for (size_t i = 0; i < parent->variables_num; i++) {
+    struct environment_variable env = parent->variables[i];
+    kprintf("Waiting2\n");
+    lock_acquire(&env.lock);
+    kprintf("Done2\n");
+    if (!env.is_used) {
+      lock_release(&env.lock);
+      continue;
+    }
+    assert(ERROR_SUCCESS ==
+           task_variable_add(task, env.key, SB_TO_SV(env.value)));
+    lock_release(&env.lock);
+  }
+  lock_release(&parent->variable_lock);
+  return true;
+}
+
 err_t task_fork(u64 *pid) {
   struct task *parent = get_current_task();
   assert(parent);
@@ -354,6 +453,13 @@ err_t task_fork(u64 *pid) {
   struct task *task;
   err_t err = kmalloc2((void **)&task, sizeof(struct task));
   if (ERROR_SUCCESS != err) {
+    return ERROR_NO_MEMORY;
+  }
+
+  lock_release(&task->variable_lock);
+
+  if (!variables_clone(task, parent)) {
+    kfree(task);
     return ERROR_NO_MEMORY;
   }
 
@@ -383,7 +489,7 @@ err_t task_fork(u64 *pid) {
     if (!fd) {
       continue;
     }
-    fd->outside_references++;
+    fd->references++;
   }
 
   lock_acquire(&task_list_lock);
@@ -450,7 +556,6 @@ void task_legacy_switch(void) {
   for (;;) {
     new_task = task_next(new_task);
 
-    // kprintf("new_task on core: %d\n", core_id_get());
     if (new_task == get_current_task()) {
       break;
     }

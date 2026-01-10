@@ -3,6 +3,7 @@
 // #include <stdlib.h>
 #include <kmalloc.h>
 #include <string.h>
+#include <assert.h>
 
 #ifndef min
 #define min(a, b) (((a) < (b)) ? (a) : (b))
@@ -269,6 +270,7 @@ struct sv sv_clone(struct sv s) {
   struct sv new_sv;
   new_sv.length = s.length;
   char *new_string = kmalloc(s.length);
+  assert(new_string);
   memcpy(new_string, s.s, s.length);
   new_sv.s = new_string;
   return new_sv;

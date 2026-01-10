@@ -33,6 +33,7 @@ struct vfs_fd *vfs_allocate_fd(void) {
   struct vfs_fd *fd = kcalloc(1, sizeof(struct vfs_fd));
   list_listener_init(&fd->listeners);
   fd->is_blocking = true;
+  fd->references = 1;
   return fd;
 }
 
@@ -205,6 +206,13 @@ void vfs_close(struct vfs_fd *fd) {
   // Check if there are existing mmaps that rely upon the vfs_fd object
   // existing
   if (0 != fd->outside_references) {
+    return;
+  }
+
+  assert(0 != fd->references);
+
+  fd->references--;
+  if (0 != fd->references) {
     return;
   }
 

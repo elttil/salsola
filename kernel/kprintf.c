@@ -398,7 +398,7 @@ int kprintf(const char *format, ...) {
   return rc;
 }
 
-void sb_write(struct print_context *_ctx, const char *s, int l) {
+void sb_kprintf_write(struct print_context *_ctx, const char *s, int l) {
   struct sb *ctx = (struct sb *)_ctx->data;
   assert(ctx);
   sb_append_buffer(ctx, s, l);
@@ -408,7 +408,7 @@ int vksbprintf(struct sb *ctx, const char *format, va_list ap) {
   struct print_context context;
 
   context.data = ctx;
-  context.write = sb_write;
+  context.write = sb_kprintf_write;
 
   return vkcprintf(&context, format, ap);
 }
