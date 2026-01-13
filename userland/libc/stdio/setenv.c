@@ -1,38 +1,74 @@
-#include <stdlib.h>
-#include <errno.h>
-#include <stdio.h>
 #include <ctype.h>
+#include <errno.h>
 #include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+struct env {
+  char *name;
+  char *value;
+  struct env *next;
+};
+
+struct env *env_head = NULL;
+
+struct env *internal_getenv(const char *name) {
+  struct env *p = env_head;
+  for (; p; p = p->next) {
+    if (0 == strcmp(p->name, name)) {
+      return p;
+    }
+  }
+  return NULL;
+}
 
 int setenv(const char *name, const char *value, int overwrite) {
-	for(const char *s = name;*s;s++) {
-		if(!isalnum(*s)) {
-			errno = EINVAL;
-			return -1;
-		}
-	}
+  if (NULL == name) {
+    errno = -EINVAL;
+    return -1;
+  }
 
-	char path[256];
-	int rc = snprintf(path, sizeof(path), "/env/%s", name);
-	struct sv sv_path = sv_init(path, rc);
-	
-	int flags = O_WRITE;
-	if(!overwrite) {
-		flags |= O_CREAT;
-	}
+  int name_length = strlen(name);
+  if (0 == name_length) {
+    errno = -EINVAL;
+    return -1;
+  }
+  int value_length = strlen(value);
 
-	int fd;
-	err_t err = sa_open(&fd, sv_path, flags, 0);
-	if(err != ERROR_SUCCESS) {
-		if(ERROR_NO_MEMORY == err) {
-			errno = ENOMEM;
-			return -1;
-		}
-		return 0;
-	}
-	
-	// TODO: Surely there is a better way. (Right?)
-	dprintf(fd, "%s", value);
-	close(fd);
-	return 0;
+  struct env *p = internal_getenv(name);
+  if (p) {
+    if (!overwrite) {
+      return 0;
+    }
+    char *new_ptr = realloc(p->value, value_length + 1);
+    if (!new_ptr) {
+      errno = -ENOMEM;
+      return -1;
+    }
+    p->value = new_ptr;
+    strcpy(p->value, value);
+    return 0;
+  }
+
+  struct env *new_env = malloc(sizeof(struct env));
+  if (!new_env) {
+    return -ENOMEM;
+  }
+  new_env->name = malloc(name_length + 1);
+  if (!new_env->name) {
+    free(new_env);
+    return -ENOMEM;
+  }
+  new_env->value = malloc(value_length + 1);
+  if (!new_env->value) {
+    free(new_env->name);
+    free(new_env);
+    return -ENOMEM;
+  }
+  strcpy(new_env->name, name);
+  strcpy(new_env->value, value);
+  new_env->next = env_head;
+  env_head = new_env;
+  return 0;
 }
