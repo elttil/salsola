@@ -15,7 +15,12 @@ DEFINE_LIST_FUNCTIONS(list_memory, struct memory_mapping *);
 
 lock_t task_list_lock;
 struct task *task_head = NULL;
+struct task *pid1_task = NULL;
 u64 active_pid = 0;
+
+void task_switch(struct task *task);
+WARN_UNUSED err_t raw_task_munmap(struct memory_mapping *map);
+WARN_UNUSED static struct task *task_next(struct task *task);
 
 struct task *get_task_head(void) {
   return task_head;
@@ -29,6 +34,22 @@ struct task *get_current_task(void) {
   return kernel_threads[core_id_get()].current_task;
 }
 
+void task_delete_maps(struct task *task) {
+  struct list_memory_ctx *maps = &task->mappings;
+  for (u64 j = 0;; j++) {
+    struct memory_mapping *map;
+    if (!list_memory_get(maps, j, &map)) {
+      break;
+    }
+    if (!map) {
+      continue;
+    }
+    UNUSED(raw_task_munmap(map));
+  }
+
+  mmu_unmap_frames(0, 0xF000000000, true);
+}
+
 bool task_init(void) {
   lock_release(&task_list_lock);
 
@@ -38,15 +59,18 @@ bool task_init(void) {
     return false;
   }
   task_head->variables = NULL;
+  task_head->children = NULL;
   task_head->variables_num = 0;
   task_head->variables_capacity = 0;
   lock_release(&task_head->variable_lock);
+  lock_release(&task_head->death_lock);
   task_head->in_use = true;
   task_head->parent = NULL;
   task_head->next = NULL;
   task_head->pid = active_pid;
   task_head->active_kpoll = NULL;
   task_head->program_name = sv_clone(C_TO_SV("KERNEL"));
+  task_head->is_dead = false;
   list_fd_init(&task_head->fds);
   list_memory_init(&task_head->mappings);
   active_pid++;
@@ -146,6 +170,78 @@ err_t task_fd_write(u64 fd, const void *buffer, u64 count, u64 *out) {
   struct vfs_fd *fd_ptr;
   GET_FD(fd, &fd_ptr);
   return vfs_write(fd_ptr, buffer, count, out);
+}
+
+void task_exit(u8 exit_code) {
+  struct task *task = get_current_task();
+  assert(task != pid1_task);
+
+  lock_acquire(&task_list_lock);
+
+  if (task_head == task) {
+    task_head = task->next;
+  }
+  assert(task_head);
+
+  {
+    struct task *p = task_head;
+    for (; p; p = p->next) {
+      if (p->next == task) {
+        p->next = task->next;
+      }
+    }
+  }
+
+  struct task *new_task = task_head;
+  for (;;) {
+    new_task = task_next(new_task);
+
+    if (new_task == get_current_task()) {
+      continue;
+    }
+
+    if (new_task->in_use) {
+      continue;
+    }
+    break;
+  }
+
+  task->next = NULL;
+
+  lock_acquire(&task->death_lock);
+  task->is_dead = true;
+  task->exit_code = exit_code;
+  lock_release(&task->death_lock);
+
+  task->in_use = false;
+  new_task->in_use = true;
+
+  {
+    struct child_list *p = task->children;
+    for (; p;) {
+      lock_acquire(&p->task->death_lock);
+      p->task->parent = pid1_task;
+      lock_release(&p->task->death_lock);
+      task->children = p->next;
+      p = p->next;
+    }
+  }
+
+  lock_release(&task_list_lock);
+
+  task_delete_maps(task);
+
+  for (u64 i = 0; i < task->fds.length; i++) {
+    struct vfs_fd *fd;
+    assert(list_fd_get(&task->fds, i, &fd));
+    if (!fd) {
+      continue;
+    }
+    vfs_close(fd);
+    list_fd_set(&task->fds, i, NULL);
+  }
+
+  task_switch(new_task);
 }
 
 err_t task_lseek(u64 fd, off_t offset, int whence, off_t *out) {
@@ -338,19 +434,7 @@ WARN_UNUSED static err_t setup_stack(void **out, u64 stack_length,
 
 err_t task_exec(struct sv file, struct sv *args, u32 num_of_args) {
   struct task *task = get_current_task();
-  struct list_memory_ctx *maps = &task->mappings;
-  for (u64 j = 0;; j++) {
-    struct memory_mapping *map;
-    if (!list_memory_get(maps, j, &map)) {
-      break;
-    }
-    if (!map) {
-      continue;
-    }
-    UNUSED(raw_task_munmap(map));
-  }
-
-  mmu_unmap_frames(0, 0xF000000000, true);
+  task_delete_maps(task);
 
   task->program_name = sv_clone(file);
 
@@ -452,6 +536,7 @@ err_t task_fork(u64 *pid) {
   }
 
   lock_release(&task->variable_lock);
+  lock_release(&task->death_lock);
 
   if (!variables_clone(task, parent)) {
     kfree(task);
@@ -460,12 +545,17 @@ err_t task_fork(u64 *pid) {
 
   task->in_use = false;
   task->parent = parent;
+  task->children = NULL;
   task->program_name = sv_clone(parent->program_name);
+  task->is_dead = false;
 
   hint_assert(!parent->active_kpoll);
   task->active_kpoll = NULL;
 
   task->pid = active_pid;
+  if (1 == task->pid && !pid1_task) {
+    pid1_task = task;
+  }
   active_pid++;
   list_fd_clone(&task->fds, &parent->fds);
   list_memory_clone(&task->mappings, &parent->mappings);
@@ -488,6 +578,11 @@ err_t task_fork(u64 *pid) {
   }
 
   lock_acquire(&task_list_lock);
+
+  struct child_list *entry = kmalloc(sizeof(struct child_list));
+  entry->task = task;
+  entry->next = task->parent->children;
+  task->parent->children = entry;
 
   task->next = task_head;
   task_head = task;

@@ -16,9 +16,9 @@ DEFINE_LIST_STRUCT(list_memory, struct memory_mapping *)
 #include <error.h>
 #include <fs/vfs.h>
 #include <mmu.h>
+#include <sb.h>
 #include <stdbool.h>
 #include <sv.h>
-#include <sb.h>
 #include <sys/kpoll.h>
 #include <sys/types.h>
 #include <task.h>
@@ -41,11 +41,16 @@ struct wait {
 };
 
 struct environment_variable {
-	struct sv key;
-	struct sb value;
-	bool is_used;
-	size_t open_ref_count;
-	lock_t lock;
+  struct sv key;
+  struct sb value;
+  bool is_used;
+  size_t open_ref_count;
+  lock_t lock;
+};
+
+struct child_list {
+  struct task *task;
+  struct child_list *next;
 };
 
 struct task {
@@ -68,7 +73,15 @@ struct task {
   struct mmu_directory *directory;
   struct kpoll *active_kpoll;
   struct wait wait;
+
+  struct child_list *children;
+
+  lock_t death_lock;
+  bool is_dead;
+  u8 exit_code;
   struct task *parent;
+  // end of death_lock
+
   struct task *next;
 };
 
@@ -98,7 +111,11 @@ WARN_UNUSED err_t task_fd_pipe(u64 fd[2]);
 void task_set_wait(struct vfs_fd *fd, int flag);
 struct task *get_current_task(void);
 void task_new_core_init(void);
-err_t task_get_from_pid(u64 pid, struct task**out);
-WARN_UNUSED err_t task_variable_get(struct task *task, struct sv key, struct environment_variable **out, bool assign);
-WARN_UNUSED err_t task_variable_add(struct task *task, struct sv key, struct sv value);
+err_t task_get_from_pid(u64 pid, struct task **out);
+WARN_UNUSED err_t task_variable_get(struct task *task, struct sv key,
+                                    struct environment_variable **out,
+                                    bool assign);
+WARN_UNUSED err_t task_variable_add(struct task *task, struct sv key,
+                                    struct sv value);
+void task_exit(u8 exit_code);
 #endif // TASK_H

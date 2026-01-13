@@ -132,6 +132,11 @@ err_t syscall_kpoll(u64 fd, struct kevent *events, size_t nevents,
   return kpoll(fd, events, nevents, nchanges);
 }
 
+void syscall_exit(u8 exit_code) {
+  task_exit(exit_code);
+  assert(0);
+}
+
 u64 syscall_handler(const struct syscall_arguments *regs) {
   u64 syscall = regs->rdi;
   const u64 args[7] = {regs->rsi, regs->rdx, regs->rbx, regs->r8,
@@ -167,6 +172,9 @@ u64 syscall_handler(const struct syscall_arguments *regs) {
     return syscall_pipe((void *)args[0]);
   case SYS_KPOLL:
     return syscall_kpoll(args[0], (void *)args[1], args[2], (void *)args[3]);
+  case SYS_EXIT:
+    syscall_exit(args[0]);
+    break;
   default:
     assert(0);
     break;
