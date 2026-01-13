@@ -30,6 +30,8 @@ struct fd_data {
 };
 
 struct vfs_fd {
+  struct vfs_fd *(*open)(struct vfs_mount *mount, struct sv file, int flags,
+                         err_t *err);
   err_t (*read)(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
                 size_t *rc);
   err_t (*write)(struct vfs_fd *fd, const void *buffer, size_t length,
@@ -46,6 +48,7 @@ struct vfs_fd {
 
   bool is_blocking;
 
+  u32 references;
   u32 outside_references;
 
   struct list_listener_ctx listeners;

@@ -6,6 +6,7 @@
 #include <drivers/ps2_keyboard.h>
 #include <drivers/serial.h>
 #include <fs/ext2.h>
+#include <fs/procfs.h>
 #include <fs/ramdisk.h>
 #include <fs/ramfs.h>
 #include <fs/vfs.h>
@@ -117,6 +118,7 @@ void kmain2(void) {
   }
 
   assert(vfs_add_mount(C_TO_SV("/"), ext2_create(root_disk)));
+  assert(vfs_add_mount(C_TO_SV("/proc/"), procfs_create()));
 
   assert(csprng_add_random_device(C_TO_SV("/dev/random")));
   assert(csprng_add_random_device(C_TO_SV("/dev/urandom")));
