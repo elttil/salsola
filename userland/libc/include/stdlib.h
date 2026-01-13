@@ -36,4 +36,5 @@ long atol(const char *nptr);
 long long atoll(const char *nptr);
 int setenv(const char *name, const char *value, int overwrite);
 char *getenv(const char *name);
+void exit(int status);
 #endif
