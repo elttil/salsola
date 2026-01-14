@@ -118,6 +118,10 @@ void *get_frame(bool allocate, u64 count) {
     }
 
     for (size_t j = 0; j < 64; j++) {
+      // TODO: Fix this, it should be able to handle frame zero.
+      if (j == 0 && i == 0) {
+        continue;
+      }
       if (frames[i] & ((u64)1 << j)) {
         left = count;
         continue;
@@ -393,6 +397,9 @@ void *mmu_virtual_to_physical(void *address, bool *exists) {
 
 void *safe_allocation(size_t length, void **physical) {
   void *p = get_frame(true, (align_up_int(length, PAGE_SIZE)) / PAGE_SIZE);
+  if (!p) {
+    return NULL;
+  }
   void *a = mmu_find_free_virtual_region(length);
 
   if (physical) {
@@ -418,6 +425,9 @@ bool allocate_pt(u64 pml4t_index, u64 pdpt_index, u64 pdt_index, u32 flags) {
   if (!(directory->pml4t->physical[pml4t_index] & PAGE_FLAG_PRESENT)) {
     void *physical;
     struct PDPT *pdpt = safe_allocation(sizeof(struct PDPT), &physical);
+    if (!pdpt) {
+      return false;
+    }
     directory->pml4t->physical[pml4t_index] = (uintptr_t)physical | flags;
     directory->pml4t->pdpt[pml4t_index] = pdpt;
   }
@@ -426,6 +436,9 @@ bool allocate_pt(u64 pml4t_index, u64 pdpt_index, u64 pdt_index, u32 flags) {
         PAGE_FLAG_PRESENT)) {
     void *physical;
     struct PDT *pdt = safe_allocation(sizeof(struct PDT), &physical);
+    if (!pdt) {
+      return false;
+    }
     directory->pml4t->pdpt[pml4t_index]->physical[pdpt_index] =
         (uintptr_t)physical | flags;
     directory->pml4t->pdpt[pml4t_index]->pdt[pdpt_index] = pdt;
@@ -440,6 +453,9 @@ bool allocate_pt(u64 pml4t_index, u64 pdpt_index, u64 pdt_index, u32 flags) {
 
   void *physical;
   void *address = safe_allocation(sizeof(struct PT), &physical);
+  if (!address) {
+    return false;
+  }
 
   directory->pml4t->pdpt[pml4t_index]->pdt[pdpt_index]->physical[pdt_index] =
       (uintptr_t)physical | flags;
@@ -514,6 +530,9 @@ static bool check_virtual_region_is_free(void *address, void **physical,
     if (allocate) {
       if (!use_frame) {
         frame = get_frame(true, 1);
+        if (!frame) {
+          return false;
+        }
       }
       *p = frame;
       *p = (void *)((uintptr_t)*p | flags | MMU_FLAG_PRESENT);
@@ -602,6 +621,9 @@ void copy_frame(void *physical_dst, void *physical_src) {
 bool clone_pt(struct PT *orig_pt, struct PT **new_pt, void *virtual_address,
               void **physical, struct list_memory_ctx *maps) {
   *new_pt = safe_allocation(sizeof(struct PT), physical);
+  if (!*new_pt) {
+    return false;
+  }
 
   for (int i = 0; i < 512; i++, virtual_address += MMU_PAGE_RANGE) {
     int flags = orig_pt->page[i] & 0xFFF;
@@ -644,6 +666,7 @@ bool clone_pt(struct PT *orig_pt, struct PT **new_pt, void *virtual_address,
   skip_checks:
 
     (*new_pt)->page[i] = (uintptr_t)get_frame(true, 1) | flags;
+    assert((*new_pt)->page[i]); // TODO:
     copy_frame((void *)((*new_pt)->page[i] & ~0xFFF), (void *)orig_pt->page[i]);
   }
 
@@ -654,6 +677,9 @@ bool clone_pdt(struct PDT *orig_pdt, struct PDT **new_pdt,
                void *virtual_address, void **physical,
                struct list_memory_ctx *maps) {
   *new_pdt = safe_allocation(sizeof(struct PDT), physical);
+  if (!*new_pdt) {
+    return false;
+  }
 
   for (int i = 0; i < 512; i++, virtual_address += MMU_PT_RANGE) {
     int flags = orig_pdt->physical[i] & 0xFFF;
@@ -672,6 +698,9 @@ bool clone_pdpt(struct PDPT *orig_pdpt, struct PDPT **new_pdpt,
                 void *virtual_address, void **physical,
                 struct list_memory_ctx *maps) {
   *new_pdpt = safe_allocation(sizeof(struct PDPT), physical);
+  if (!*new_pdpt) {
+    return false;
+  }
 
   for (int i = 0; i < 512; i++, virtual_address += MMU_PDT_RANGE) {
     int flags = orig_pdpt->physical[i] & 0xFFF;
@@ -692,6 +721,9 @@ struct mmu_directory *mmu_clone_directory(struct mmu_directory *directory,
 
   void *physical;
   struct PML4T *pml4t = safe_allocation(sizeof(struct PML4T), &physical);
+  if (!pml4t) {
+    return NULL;
+  }
   new_mmu_directory->pml4t = pml4t;
   new_mmu_directory->physical = physical;
 
