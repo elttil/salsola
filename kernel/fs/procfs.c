@@ -96,6 +96,9 @@ struct vfs_fd *procfs_open(struct vfs_mount *mount, struct sv file, int flags,
     struct vfs_fd *fd;
     err_t e = open_task_directory(task, &fd);
     ASSIGN_PTR(err, e);
+    if (ERROR_SUCCESS != e) {
+      return NULL;
+    }
     return fd;
   }
 
