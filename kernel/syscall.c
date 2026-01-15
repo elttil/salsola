@@ -136,15 +136,22 @@ void syscall_exit(u8 exit_code) {
   assert(0);
 }
 
-err_t syscall_waitfd(int fd, u8 *error_code) {
+err_t syscall_waitfd(int fd, u8 *error_code, pid_t *_pid) {
   u8 rc;
+  pid_t pid;
   TRY(mmu_verify_user_pointer(error_code, sizeof(u8)));
-  err_t err = task_waitfd(fd, &rc);
+  TRY(mmu_verify_user_pointer(_pid, sizeof(pid_t)));
+  err_t err = task_waitfd(fd, &rc, &pid);
   if (ERROR_SUCCESS != err) {
     return err;
   }
-  TRY(mmu_verify_user_pointer(error_code, sizeof(u8)));
-  *error_code = rc;
+  TRY(mmu_verify_user_pointer(_pid, sizeof(pid_t)));
+  if (error_code) {
+    *error_code = rc;
+  }
+  if (_pid) {
+    *_pid = pid;
+  }
   return err;
 }
 
@@ -184,7 +191,7 @@ u64 syscall_handler(const struct syscall_arguments *regs) {
   case SYS_KPOLL:
     return syscall_kpoll(args[0], (void *)args[1], args[2], (void *)args[3]);
   case SYS_WAITFD:
-    return syscall_waitfd(args[0], (void *)args[1]);
+    return syscall_waitfd(args[0], (void *)args[1], (void *)args[2]);
   case SYS_EXIT:
     syscall_exit(args[0]);
     break;

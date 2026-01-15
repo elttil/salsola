@@ -195,7 +195,7 @@ static struct task *get_dead_child(struct task *task, struct vfs_fd *fd) {
   return NULL;
 }
 
-err_t task_waitfd(int fd, u8 *exit_code) {
+err_t task_waitfd(int fd, u8 *exit_code, pid_t *pid) {
   struct task *task = get_current_task();
   task->wait_for_child = true;
 
@@ -216,6 +216,7 @@ err_t task_waitfd(int fd, u8 *exit_code) {
     task_legacy_switch();
   }
   ASSIGN_PTR(exit_code, child->exit_code);
+  ASSIGN_PTR(pid, child->pid);
 
   // TODO: Actually kill and gut the child.
   if (task_head == child) {
