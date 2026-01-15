@@ -110,6 +110,13 @@ struct sv sv_split_space(const struct sv input, struct sv *rest) {
 
 struct sv sv_end_split_delim(const struct sv input, struct sv *rest,
                              char delim) {
+  if (0 == input.length) {
+    if (rest) {
+      rest->s = NULL;
+      rest->length = 0;
+    }
+    return input;
+  }
   for (size_t i = input.length - 1; i > 0; i--) {
     if (delim == input.s[i]) {
       struct sv r = {
