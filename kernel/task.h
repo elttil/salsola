@@ -51,6 +51,10 @@ struct task {
   u64 pid;
   void *program_stop;
 
+  lock_t cwd_lock;
+  struct sb cwd;
+  // end of cwd_lock;
+
   bool in_use;
 
   u64 outside_reference;

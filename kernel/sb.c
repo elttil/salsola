@@ -23,6 +23,19 @@ int sb_init_capacity(struct sb *ctx, size_t starting_capacity) {
   return 1;
 }
 
+int sb_clone(struct sb *ctx, const struct sb *orig) {
+  if (!sb_init_capacity(ctx, orig->length)) {
+    return 0;
+  }
+
+  memcpy(ctx->string, orig->string, orig->length);
+  ctx->length = orig->length;
+
+  ctx->to_ignore = orig->to_ignore;
+  ctx->prebuffer = orig->prebuffer;
+  return 1;
+}
+
 void sb_init_buffer(struct sb *ctx, char *buffer, size_t size) {
   ctx->string = buffer;
   ctx->capacity = size;
@@ -133,35 +146,35 @@ int sb_prepend_buffer(struct sb *ctx, const char *buffer, size_t length) {
   return 1;
 }
 
-err_t sb_read(struct sb *ctx, void *buffer, size_t length,
-                    size_t offset, size_t *rc) {
-  if(offset > ctx->length) {
-	ASSIGN_PTR(rc, 0);
-	return ERROR_SUCCESS;
+err_t sb_read(struct sb *ctx, void *buffer, size_t length, size_t offset,
+              size_t *rc) {
+  if (offset > ctx->length) {
+    ASSIGN_PTR(rc, 0);
+    return ERROR_SUCCESS;
   }
 
-  size_t read_len = min(length, ctx->length-offset);
-  memcpy(buffer, ctx->string+offset, read_len);
+  size_t read_len = min(length, ctx->length - offset);
+  memcpy(buffer, ctx->string + offset, read_len);
   ASSIGN_PTR(rc, read_len);
   return ERROR_SUCCESS;
 }
 
-err_t sb_write(struct sb *ctx, const void *buffer, size_t length,
-                    size_t offset, size_t *rc) {
-  if(offset > ctx->length) {
-	return ERROR_WRITE_EXCEEDS_BOUNDS;
+err_t sb_write(struct sb *ctx, const void *buffer, size_t length, size_t offset,
+               size_t *rc) {
+  if (offset > ctx->length) {
+    return ERROR_WRITE_EXCEEDS_BOUNDS;
   }
 
   // FIXME: HANDLE OVERFLOW
-  if(offset+length > ctx->capacity) {
-	if(!sb_increase_buffer(ctx, offset+length - ctx->capacity)) {
-		return ERROR_NO_MEMORY;
-	}
+  if (offset + length > ctx->capacity) {
+    if (!sb_increase_buffer(ctx, offset + length - ctx->capacity)) {
+      return ERROR_NO_MEMORY;
+    }
   }
 
-  ctx->length = max(ctx->length, offset+length);
+  ctx->length = max(ctx->length, offset + length);
 
-  memcpy(ctx->string+offset, buffer, length);
+  memcpy(ctx->string + offset, buffer, length);
   ASSIGN_PTR(rc, length);
   return ERROR_SUCCESS;
 }

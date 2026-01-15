@@ -1,9 +1,9 @@
 #ifndef SB_H
 #define SB_H
-#include <sv.h>
+#include <error.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <error.h>
+#include <sv.h>
 
 struct sb {
   char *string;
@@ -18,6 +18,7 @@ struct sv;
 void sb_init(struct sb *ctx);
 void sb_set_ignore(struct sb *ctx, size_t n);
 int sb_init_capacity(struct sb *ctx, size_t starting_capacity);
+int sb_clone(struct sb *ctx, const struct sb *orig);
 void sb_init_buffer(struct sb *ctx, char *buffer, size_t size);
 void sb_free(struct sb *ctx);
 void sb_reset(struct sb *ctx);
@@ -29,8 +30,8 @@ int sb_append_buffer(struct sb *ctx, const char *buffer, size_t length);
 int sb_append_sv(struct sb *ctx, struct sv sv);
 int sb_prepend_sv(struct sb *ctx, struct sv sv);
 int sb_prepend_buffer(struct sb *ctx, const char *buffer, size_t length);
-err_t sb_read(struct sb *ctx, void *buffer, size_t length,
-                    size_t offset, size_t *rc);
-err_t sb_write(struct sb *ctx, const void *buffer, size_t length,
-                    size_t offset, size_t *rc);
+err_t sb_read(struct sb *ctx, void *buffer, size_t length, size_t offset,
+              size_t *rc);
+err_t sb_write(struct sb *ctx, const void *buffer, size_t length, size_t offset,
+               size_t *rc);
 #endif

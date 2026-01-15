@@ -55,4 +55,3 @@ struct sv sv_next(struct sv s, char *c);
 // WARNING: DOES NOT HANDLE SIGNED NUMBERS
 long sv_parse_long(struct sv s, struct sv *rest, int *err);
 #endif
-

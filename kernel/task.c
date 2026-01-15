@@ -68,6 +68,11 @@ bool task_init(void) {
   task_head->active_kpoll = NULL;
   task_head->program_name = sv_clone(C_TO_SV("KERNEL"));
   task_head->is_dead = false;
+
+  lock_release(&task_head->cwd_lock);
+  sb_init(&task_head->cwd);
+  assert(sb_append_char(&task_head->cwd, '/')); // TODO: OOM
+
   list_fd_init(&task_head->fds);
   list_memory_init(&task_head->mappings);
   active_pid++;
@@ -142,7 +147,55 @@ void task_set_wait(struct vfs_fd *fd, int flag) {
   task_legacy_switch();
 }
 
+bool path_cleaner(struct sb *out, struct sv path, u16 *skip_ptr) {
+  u16 skip = 0;
+  if (skip_ptr) {
+    skip = *skip_ptr;
+  }
+  struct sv p = path;
+  for (; sv_length(p) > 0;) {
+    struct sv rev_path = sv_end_split_delim(p, &p, '/');
+    sv_try_eat(rev_path, &rev_path, C_TO_SV("/"));
+    if (0 == sv_length(rev_path) || sv_eq(rev_path, C_TO_SV("."))) {
+      // NOP
+      continue;
+    }
+    if (sv_eq(rev_path, C_TO_SV(".."))) {
+      skip++;
+      continue;
+    }
+    if (skip > 0) {
+      skip--;
+      continue;
+    }
+    assert(sb_prepend_sv(out, rev_path));
+    assert(sb_prepend_sv(out, C_TO_SV("/")));
+  }
+  ASSIGN_PTR(skip_ptr, skip);
+  return true;
+}
+
+bool path_open(struct sb *out, struct sv directory, struct sv path) {
+  sb_init(out);
+  if (sv_partial_eq(path, C_TO_SV("/"))) {
+    path_cleaner(out, path, NULL);
+    return true;
+  }
+
+  u16 skip = 0;
+  assert(path_cleaner(out, path, &skip));
+  assert(path_cleaner(out, directory, &skip));
+  return true;
+}
+
 err_t task_fd_open(u64 *fd, struct sv path, int flags) {
+  struct task *task = get_current_task();
+
+  lock_acquire(&task->cwd_lock);
+  struct sb out;
+  assert(path_open(&out, SB_TO_SV(task->cwd), path)); // TODO: OOM
+  lock_release(&task->cwd_lock);
+
   err_t err;
   struct vfs_fd *fd_ptr = vfs_open(path, flags, &err);
   if (!fd_ptr) {
@@ -150,7 +203,7 @@ err_t task_fd_open(u64 *fd, struct sv path, int flags) {
     return err;
   }
 
-  if (!list_fd_add(&get_current_task()->fds, fd_ptr, fd)) {
+  if (!list_fd_add(&task->fds, fd_ptr, fd)) {
     return ERROR_NO_MEMORY;
   }
 
@@ -527,6 +580,11 @@ err_t task_fork(u64 *pid) {
   task->children = NULL;
   task->program_name = sv_clone(parent->program_name);
   task->is_dead = false;
+
+  lock_acquire(&parent->cwd_lock);
+  assert(sb_clone(&task->cwd, &parent->cwd)); // TODO: OOM
+  lock_release(&parent->cwd_lock);
+  lock_release(&task->cwd_lock);
 
   hint_assert(!parent->active_kpoll);
   task->active_kpoll = NULL;
