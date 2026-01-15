@@ -210,12 +210,31 @@ err_t task_waitfd(int fd, u8 *exit_code) {
     task->wait_child_fdptr = NULL;
   }
 
+  interrupts_disable();
   struct task *child;
   for (; NULL == (child = get_dead_child(task, task->wait_child_fdptr));) {
     task_legacy_switch();
   }
   ASSIGN_PTR(exit_code, child->exit_code);
+
   // TODO: Actually kill and gut the child.
+  if (task_head == child) {
+    task_head = child->next;
+  }
+  assert(task_head);
+
+  {
+    struct task *p = task_head;
+    for (; p; p = p->next) {
+      if (p->next == child) {
+        p->next = child->next;
+        break;
+      }
+    }
+  }
+
+  child->next = NULL;
+
   return ERROR_SUCCESS;
 }
 
@@ -224,22 +243,6 @@ void task_exit(u8 exit_code) {
   assert(task != pid1_task);
 
   lock_acquire(&task_list_lock);
-
-  /*
-    if (task_head == task) {
-      task_head = task->next;
-    }
-    assert(task_head);
-
-    {
-      struct task *p = task_head;
-      for (; p; p = p->next) {
-        if (p->next == task) {
-          p->next = task->next;
-        }
-      }
-    }
-  */
 
   lock_acquire(&task->death_lock);
   task->is_dead = true;
@@ -263,8 +266,6 @@ void task_exit(u8 exit_code) {
     }
     break;
   }
-
-  //  task->next = NULL;
 
   task->in_use = false;
   new_task->in_use = true;
