@@ -14,6 +14,7 @@ enum {
   VFS_TYPE_FILE = 0,
   VFS_TYPE_BLOCK_DEVICE,
   VFS_TYPE_CHAR_DEVICE,
+  VFS_TYPE_PROCESS,
 };
 
 struct vfs_mount {

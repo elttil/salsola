@@ -2,7 +2,6 @@
 #include <assert.h>
 #include <csprng.h>
 #include <error.h>
-#include <kprintf.h>
 #include <mmu.h>
 #include <stddef.h>
 #include <sv.h>
@@ -137,6 +136,18 @@ void syscall_exit(u8 exit_code) {
   assert(0);
 }
 
+err_t syscall_waitfd(int fd, u8 *error_code) {
+  u8 rc;
+  TRY(mmu_verify_user_pointer(error_code, sizeof(u8)));
+  err_t err = task_waitfd(fd, &rc);
+  if (ERROR_SUCCESS != err) {
+    return err;
+  }
+  TRY(mmu_verify_user_pointer(error_code, sizeof(u8)));
+  *error_code = rc;
+  return err;
+}
+
 u64 syscall_handler(const struct syscall_arguments *regs) {
   u64 syscall = regs->rdi;
   const u64 args[7] = {regs->rsi, regs->rdx, regs->rbx, regs->r8,
@@ -172,6 +183,8 @@ u64 syscall_handler(const struct syscall_arguments *regs) {
     return syscall_pipe((void *)args[0]);
   case SYS_KPOLL:
     return syscall_kpoll(args[0], (void *)args[1], args[2], (void *)args[3]);
+  case SYS_WAITFD:
+    return syscall_waitfd(args[0], (void *)args[1]);
   case SYS_EXIT:
     syscall_exit(args[0]);
     break;

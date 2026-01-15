@@ -60,6 +60,7 @@ bool task_init(void) {
   }
   task_head->children = NULL;
   lock_release(&task_head->death_lock);
+  lock_release(&task_head->child_list_lock);
   task_head->in_use = true;
   task_head->parent = NULL;
   task_head->next = NULL;
@@ -168,29 +169,90 @@ err_t task_fd_write(u64 fd, const void *buffer, u64 count, u64 *out) {
   return vfs_write(fd_ptr, buffer, count, out);
 }
 
+static struct task *get_dead_child(struct task *task, struct vfs_fd *fd) {
+  lock_acquire(&task->child_list_lock);
+
+  struct child_list **prev_next = &task->children;
+  struct child_list *entry = task->children;
+  for (; entry; prev_next = &entry->next, entry = entry->next) {
+    struct task *t = entry->task;
+    lock_acquire(&t->death_lock);
+    if (!t->is_dead) {
+      lock_release(&t->death_lock);
+      continue;
+    }
+    lock_release(&t->death_lock);
+
+    if (fd == NULL || fd->internal_object == t) {
+      *prev_next = entry->next;
+
+      lock_release(&task->child_list_lock);
+      return t;
+    }
+  }
+
+  lock_release(&task->child_list_lock);
+  return NULL;
+}
+
+err_t task_waitfd(int fd, u8 *exit_code) {
+  struct task *task = get_current_task();
+  task->wait_for_child = true;
+
+  if (-1 != fd) {
+    struct vfs_fd *fd_ptr;
+    GET_FD(fd, &fd_ptr);
+    if (VFS_TYPE_PROCESS != fd_ptr->type) {
+      return ERROR_NOT_A_PROCESS;
+    }
+    task->wait_child_fdptr = fd_ptr;
+  } else {
+    task->wait_child_fdptr = NULL;
+  }
+
+  struct task *child;
+  for (; NULL == (child = get_dead_child(task, task->wait_child_fdptr));) {
+    task_legacy_switch();
+  }
+  ASSIGN_PTR(exit_code, child->exit_code);
+  // TODO: Actually kill and gut the child.
+  return ERROR_SUCCESS;
+}
+
 void task_exit(u8 exit_code) {
   struct task *task = get_current_task();
   assert(task != pid1_task);
 
   lock_acquire(&task_list_lock);
 
-  if (task_head == task) {
-    task_head = task->next;
-  }
-  assert(task_head);
+  /*
+    if (task_head == task) {
+      task_head = task->next;
+    }
+    assert(task_head);
 
-  {
-    struct task *p = task_head;
-    for (; p; p = p->next) {
-      if (p->next == task) {
-        p->next = task->next;
+    {
+      struct task *p = task_head;
+      for (; p; p = p->next) {
+        if (p->next == task) {
+          p->next = task->next;
+        }
       }
     }
-  }
+  */
+
+  lock_acquire(&task->death_lock);
+  task->is_dead = true;
+  task->exit_code = exit_code;
+  lock_release(&task->death_lock);
 
   struct task *new_task = task_head;
   for (;;) {
     new_task = task_next(new_task);
+
+    if (new_task->is_dead) {
+      continue;
+    }
 
     if (new_task == get_current_task()) {
       continue;
@@ -202,17 +264,13 @@ void task_exit(u8 exit_code) {
     break;
   }
 
-  task->next = NULL;
-
-  lock_acquire(&task->death_lock);
-  task->is_dead = true;
-  task->exit_code = exit_code;
-  lock_release(&task->death_lock);
+  //  task->next = NULL;
 
   task->in_use = false;
   new_task->in_use = true;
 
   {
+    lock_acquire(&task->child_list_lock);
     struct child_list *p = task->children;
     for (; p;) {
       lock_acquire(&p->task->death_lock);
@@ -221,6 +279,7 @@ void task_exit(u8 exit_code) {
       task->children = p->next;
       p = p->next;
     }
+    lock_release(&task->child_list_lock);
   }
 
   lock_release(&task_list_lock);
@@ -459,6 +518,7 @@ err_t task_fork(u64 *pid) {
   }
 
   lock_release(&task->death_lock);
+  lock_release(&task->child_list_lock);
 
   task->in_use = false;
   task->parent = parent;
@@ -498,8 +558,10 @@ err_t task_fork(u64 *pid) {
 
   struct child_list *entry = kmalloc(sizeof(struct child_list));
   entry->task = task;
+  lock_acquire(&task->parent->child_list_lock);
   entry->next = task->parent->children;
   task->parent->children = entry;
+  lock_release(&task->parent->child_list_lock);
 
   task->next = task_head;
   task_head = task;
@@ -563,6 +625,10 @@ void task_legacy_switch(void) {
   for (;;) {
     new_task = task_next(new_task);
 
+    if (new_task->is_dead) {
+      continue;
+    }
+
     if (new_task == get_current_task()) {
       break;
     }
@@ -599,6 +665,10 @@ void task_new_core_init(void) {
 
     for (;;) {
       new_task = task_next(new_task);
+
+      if (new_task->is_dead) {
+        continue;
+      }
 
       if (new_task == task_head) {
         lock_release(&task_list_lock);

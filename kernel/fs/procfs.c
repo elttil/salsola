@@ -37,6 +37,7 @@ struct vfs_fd *task_open(struct vfs_mount *mount, struct sv path, int flags,
 
   if (sv_eq(path, C_TO_SV("pid"))) {
     fd->read = task_pid_read;
+    fd->type = VFS_TYPE_BLOCK_DEVICE;
   } else {
     kfree(fd);
 
@@ -60,6 +61,8 @@ err_t open_task_directory(struct task *task, struct vfs_fd **out_fd) {
     return ERROR_NO_MEMORY;
   }
   fd->mount->internal_object = task;
+  fd->internal_object = task;
+  fd->type = VFS_TYPE_PROCESS;
 
   fd->open = task_open;
 

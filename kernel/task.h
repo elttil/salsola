@@ -62,7 +62,12 @@ struct task {
   struct kpoll *active_kpoll;
   struct wait wait;
 
+  bool wait_for_child;
+  struct vfs_fd *wait_child_fdptr;
+
+  lock_t child_list_lock;
   struct child_list *children;
+  // end of child_list_lock;
 
   lock_t death_lock;
   bool is_dead;
@@ -101,4 +106,5 @@ struct task *get_current_task(void);
 void task_new_core_init(void);
 err_t task_get_from_pid(u64 pid, struct task **out);
 void task_exit(u8 exit_code);
+err_t task_waitfd(int fd, u8 *exit_code);
 #endif // TASK_H

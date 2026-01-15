@@ -12,3 +12,4 @@
 #define SYS_PIPE 11
 #define SYS_KPOLL 12
 #define SYS_EXIT 13
+#define SYS_WAITFD 14
