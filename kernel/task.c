@@ -3,6 +3,7 @@
 #include <arch/amd64/task_switch.h>
 #include <assert.h>
 #include <elf.h>
+#include <fcntl.h>
 #include <fs/pipe.h>
 #include <kmalloc.h>
 #include <log.h>
@@ -599,6 +600,9 @@ WARN_UNUSED static err_t setup_stack(void **out, u64 stack_length,
 }
 
 err_t task_exec(struct sv file, struct sv *args, u32 num_of_args) {
+  struct vfs_fd *fd;
+  TRY(elf_open(file, &fd));
+
   struct task *task = get_current_task();
   task_delete_maps(task);
 
@@ -606,8 +610,11 @@ err_t task_exec(struct sv file, struct sv *args, u32 num_of_args) {
 
   void *program_end;
   void *entry;
-  // FIXME: This is a bad state to crash in. The process should just exit
-  assert(ERROR_SUCCESS == elf_load_file(file, &program_end, &entry));
+  err_t err = elf_load_file(fd, &program_end, &entry);
+  if (ERROR_SUCCESS != err) {
+    // FIXME: What do we do here?
+    assert(0);
+  }
 
   uintptr_t stack_length = 0x5000;
   void *stack_ptr;
