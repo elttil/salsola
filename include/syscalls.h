@@ -13,3 +13,5 @@
 #define SYS_KPOLL 12
 #define SYS_EXIT 13
 #define SYS_WAITFD 14
+#define SYS_GETCWD 15
+#define SYS_CHDIR 16

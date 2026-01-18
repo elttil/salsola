@@ -179,13 +179,68 @@ bool path_open(struct sb *out, struct sv directory, struct sv path) {
   sb_init(out);
   if (sv_partial_eq(path, C_TO_SV("/"))) {
     path_cleaner(out, path, NULL);
+    if (0 == sv_length(SB_TO_SV(*out))) {
+      sb_append(out, "/");
+    }
     return true;
   }
 
   u16 skip = 0;
   assert(path_cleaner(out, path, &skip));
   assert(path_cleaner(out, directory, &skip));
+
+  if (0 == sv_length(SB_TO_SV(*out))) {
+    sb_append(out, "/");
+  }
   return true;
+}
+
+err_t task_chdir(struct sv path) {
+  struct task *task = get_current_task();
+  lock_acquire(&task->cwd_lock);
+
+  struct sv cwd = SB_TO_SV(task->cwd);
+
+  struct sb new_cwd;
+  assert(path_open(&new_cwd, cwd, path));
+
+  struct vfs_fd *fd = vfs_open(SB_TO_SV(new_cwd), 0, NULL);
+  if (!fd) {
+    lock_release(&task->cwd_lock);
+    return ERROR_NO_FILE;
+  }
+  if (VFS_TYPE_DIRECTORY != fd->type) {
+    vfs_close(fd);
+    lock_release(&task->cwd_lock);
+    return ERROR_NOT_A_DIRECTORY;
+  }
+
+  vfs_close(fd);
+
+  sb_free(&task->cwd);
+  sb_clone(&task->cwd, &new_cwd);
+  sb_free(&new_cwd);
+
+  lock_release(&task->cwd_lock);
+
+  return ERROR_SUCCESS;
+}
+
+err_t task_getcwd(char *buffer, size_t size) {
+  if (0 == size) {
+    return ERROR_BUFFER_TOO_SMALL;
+  }
+  struct task *task = get_current_task();
+  lock_acquire(&task->cwd_lock);
+  struct sv cwd = SB_TO_SV(task->cwd);
+  if (sv_length(cwd) > size - 1) {
+    lock_release(&task->cwd_lock);
+    return ERROR_BUFFER_TOO_SMALL;
+  }
+  memcpy(buffer, sv_buffer(cwd), sv_length(cwd));
+  buffer[sv_length(cwd)] = '\0';
+  lock_release(&task->cwd_lock);
+  return ERROR_SUCCESS;
 }
 
 err_t task_fd_open(u64 *fd, struct sv path, int flags) {

@@ -3,6 +3,7 @@
 #include "sb.h"
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #define SB_TO_SV(_sb)                                                          \
   (struct sv) {                                                                \

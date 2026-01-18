@@ -111,4 +111,6 @@ void task_new_core_init(void);
 err_t task_get_from_pid(u64 pid, struct task **out);
 void task_exit(u8 exit_code);
 err_t task_waitfd(int fd, u8 *exit_code, pid_t *pid);
+err_t task_chdir(struct sv path);
+err_t task_getcwd(char *buffer, size_t size);
 #endif // TASK_H

@@ -155,6 +155,17 @@ err_t syscall_waitfd(int fd, u8 *error_code, pid_t *_pid) {
   return err;
 }
 
+err_t syscall_getcwd(char *buffer, size_t size) {
+  TRY(mmu_verify_user_pointer(buffer, size));
+  return task_getcwd(buffer, size);
+}
+
+err_t syscall_chdir(char *_path, size_t length) {
+  struct sv path;
+  TRY(mmu_get_user_sv(_path, length, &path));
+  return task_chdir(path);
+}
+
 u64 syscall_handler(const struct syscall_arguments *regs) {
   u64 syscall = regs->rdi;
   const u64 args[7] = {regs->rsi, regs->rdx, regs->rbx, regs->r8,
@@ -192,6 +203,10 @@ u64 syscall_handler(const struct syscall_arguments *regs) {
     return syscall_kpoll(args[0], (void *)args[1], args[2], (void *)args[3]);
   case SYS_WAITFD:
     return syscall_waitfd(args[0], (void *)args[1], (void *)args[2]);
+  case SYS_GETCWD:
+    return syscall_getcwd((void *)args[0], args[1]);
+  case SYS_CHDIR:
+    return syscall_chdir((void *)args[0], args[1]);
   case SYS_EXIT:
     syscall_exit(args[0]);
     break;

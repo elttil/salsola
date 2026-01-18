@@ -41,4 +41,8 @@ int pipe(int fd[2]);
 err_t sa_pipe(u64 fd[2]);
 
 pid_t getpid(void);
+err_t sa_chdir(struct sv path);
+
+int chdir(const char *path);
+char *getcwd(char *buf, size_t size);
 #endif
