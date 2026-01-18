@@ -318,7 +318,6 @@ err_t task_waitfd(int fd, u8 *exit_code, pid_t *pid) {
     task->wait_child_fdptr = NULL;
   }
 
-  interrupts_disable();
   struct task *child;
   for (; NULL == (child = get_dead_child(task, task->wait_child_fdptr));) {
     task_legacy_switch();
@@ -375,6 +374,8 @@ void task_exit(u8 exit_code) {
     }
     break;
   }
+
+  assert(!new_task->in_use && !new_task->is_dead);
 
   task->in_use = false;
   new_task->in_use = true;
@@ -692,12 +693,18 @@ err_t task_fork(u64 *pid) {
 }
 
 void task_switch(struct task *task) {
-  __asm__("sti");
   struct task *old = get_current_task();
   set_current_task(task);
+  assert(task != old);
 
   mmu_lazy_set_directory(get_current_task()->directory);
+
+  lock_acquire(&task_list_lock);
+  if (old) {
+    old->in_use = false;
+  }
   switch_to_task(old, task);
+  lock_release(&task_list_lock);
 }
 
 WARN_UNUSED static struct task *task_next(struct task *task) {
@@ -762,8 +769,8 @@ void task_legacy_switch(void) {
     lock_release(&task_list_lock);
     return;
   }
+  assert(!new_task->in_use && !new_task->is_dead);
 
-  get_current_task()->in_use = false;
   new_task->in_use = true;
 
   lock_release(&task_list_lock);
@@ -793,12 +800,9 @@ void task_new_core_init(void) {
       if (new_task->in_use) {
         continue;
       }
-
-      if (is_halted(new_task)) {
-        continue;
-      }
       break;
     }
+    assert(!new_task->in_use && !new_task->is_dead);
 
     new_task->in_use = true;
 
@@ -806,6 +810,5 @@ void task_new_core_init(void) {
     break;
   }
 
-  set_current_task(new_task);
   task_switch(new_task);
 }

@@ -43,7 +43,6 @@ weird_switch2:
 ; preserve: rbx, rsp, rbp, r12, r13, r14, and r15
 ; args: rdi, rsi
 switch_to_task:
-	cli
 	push rbx
 	push rbp
 	push r12
@@ -51,11 +50,15 @@ switch_to_task:
 	push r14
 	push r15
 
+    cmp rdi, 0
+	je skip_null
+
 	; Preserve current state
 	mov [rdi], rsp ; rsp
 	mov rax, cr3
 	mov [rdi+8], rax ; cr3
 ;	mov [rdi+16], rsp0 ; rsp0
+skip_null:
 
 	mov rsp, [rsi] ; rsp
 	mov rax, [rsi+8] ; cr3
@@ -75,8 +78,9 @@ switch_to_task:
 	pop r12
 	pop rbp
 	pop rbx
- 
+
     sti
+ 
     ret
 
 global jump_usermode
@@ -84,4 +88,5 @@ jump_usermode:
 	mov rsp, rsi
 	mov rcx, rdi
 	mov r11, 0x202
+	sti
 	o64 sysret
