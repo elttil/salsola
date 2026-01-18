@@ -113,4 +113,5 @@ void task_exit(u8 exit_code);
 err_t task_waitfd(int fd, u8 *exit_code, pid_t *pid);
 err_t task_chdir(struct sv path);
 err_t task_getcwd(char *buffer, size_t size);
+err_t task_fcntl(int fd, int cmd, int arg);
 #endif // TASK_H

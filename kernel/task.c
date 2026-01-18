@@ -745,9 +745,21 @@ WARN_UNUSED static bool is_halted(struct task *task) {
   return false;
 }
 
-void task_legacy_switch(void) {
-  // interrupts_disable();
+err_t task_fcntl(int fd, int cmd, int arg) {
+  struct vfs_fd *fd_ptr;
+  GET_FD(fd, &fd_ptr);
 
+  // TODO: Do more
+  if (F_SETFL == cmd) {
+    if (arg == O_NONBLOCK) {
+      fd_ptr->is_blocking = false;
+      return ERROR_SUCCESS;
+    }
+  }
+  return ERROR_FCNTL_INVALID_FLAGS;
+}
+
+void task_legacy_switch(void) {
   lock_acquire(&task_list_lock);
 
   struct task *new_task = get_current_task();
@@ -765,7 +777,6 @@ void task_legacy_switch(void) {
     if (new_task->in_use) {
       continue;
     }
-
     if (is_halted(new_task)) {
       continue;
     }

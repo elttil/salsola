@@ -166,6 +166,10 @@ err_t syscall_chdir(char *_path, size_t length) {
   return task_chdir(path);
 }
 
+err_t syscall_fcntl(int fd, int cmd, int arg) {
+  return task_fcntl(fd, cmd, arg);
+}
+
 u64 syscall_handler(const struct syscall_arguments *regs) {
   u64 syscall = regs->rdi;
   const u64 args[7] = {regs->rsi, regs->rdx, regs->rbx, regs->r8,
@@ -209,6 +213,9 @@ u64 syscall_handler(const struct syscall_arguments *regs) {
     return syscall_chdir((void *)args[0], args[1]);
   case SYS_EXIT:
     syscall_exit(args[0]);
+    break;
+  case SYS_FCNTL:
+    syscall_fcntl(args[0], args[1], args[2]);
     break;
   default:
     assert(0);
