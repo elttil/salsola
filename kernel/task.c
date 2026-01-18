@@ -46,6 +46,7 @@ void task_delete_maps(struct task *task) {
       continue;
     }
     UNUSED(raw_task_munmap(map));
+    list_memory_remove(maps, j);
   }
 
   mmu_unmap_frames(0, 0xF000000000, true);
