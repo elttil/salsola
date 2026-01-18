@@ -566,10 +566,10 @@ WARN_UNUSED static err_t setup_stack(void **out, u64 stack_length,
   }
 
   char ***ptrs = kallocarray(sizeof(char **), num_of_args + 1);
-  for (u32 i = num_of_args; i > 0; i--) {
+  for (i32 i = num_of_args; i >= 0; i--) {
     ptr -= sizeof(char *);
     ptrs[i] = (char **)ptr;
-    if (i != num_of_args) {
+    if (i != (i32)num_of_args) {
       *(ptrs[i]) = argv_ptrs[i];
     } else {
       *(ptrs[i]) = NULL;
