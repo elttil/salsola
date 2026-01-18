@@ -149,6 +149,9 @@ void kmain2(void) {
     assert(0);
   }
   for (;;) {
+    __asm__("sti");
+    __asm__("hlt");
+    __asm__("cli");
     task_legacy_switch();
   }
 }

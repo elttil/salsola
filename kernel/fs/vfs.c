@@ -34,10 +34,12 @@ struct vfs_fd *vfs_allocate_fd(void) {
   list_listener_init(&fd->listeners);
   fd->is_blocking = true;
   fd->references = 1;
+  lock_release(&fd->listeners_lock);
   return fd;
 }
 
 static void vfs_notify_listeners(struct vfs_fd *fd) {
+  lock_acquire(&fd->listeners_lock);
   for (u64 i = 0;; i++) {
     struct listener *listener;
     if (!list_listener_get(&fd->listeners, i, &listener)) {
@@ -75,10 +77,16 @@ static void vfs_notify_listeners(struct vfs_fd *fd) {
 
     lock_release(&listener->lock);
   }
+  lock_release(&fd->listeners_lock);
 }
 
 err_t vfs_add_listener(struct vfs_fd *fd, struct listener *listener) {
-  TRY(list_listener_add(&fd->listeners, listener, NULL));
+  lock_acquire(&fd->listeners_lock);
+  err_t err = list_listener_add(&fd->listeners, listener, NULL);
+  lock_release(&fd->listeners_lock);
+  if (ERROR_SUCCESS != err) {
+    return err;
+  }
 
   if (VFS_TYPE_BLOCK_DEVICE == fd->type) {
     // The caller isn't(shouldn't be) listening to a block device for figuring

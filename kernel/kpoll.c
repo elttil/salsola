@@ -98,6 +98,7 @@ err_t kpoll(u64 fd, struct kevent *events, size_t nevents, size_t *nchanges) {
     events[ch].flags = 0;
     for (;; j++) {
       if (!list_listener_get(&kpoll->updates, j, &listener)) {
+        listener = NULL;
         break;
       }
       if (!listener) {
@@ -112,9 +113,9 @@ err_t kpoll(u64 fd, struct kevent *events, size_t nevents, size_t *nchanges) {
         events[ch].flags |= KEVENT_CAN_WRITE;
       }
       if (0 != events[ch].flags) {
-        lock_release(&listener->lock);
         break;
       }
+      listener->has_sent_update = false;
       list_listener_remove(&kpoll->updates, j);
       lock_release(&listener->lock);
       listener = NULL;
@@ -130,6 +131,7 @@ err_t kpoll(u64 fd, struct kevent *events, size_t nevents, size_t *nchanges) {
       listener->has_sent_update = false;
       ch++;
     }
+    lock_release(&listener->lock);
   }
 
   lock_release(&kpoll->lock);

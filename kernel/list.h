@@ -116,6 +116,7 @@
         if (index) {                                                           \
           *index = i;                                                          \
         }                                                                      \
+	    memcpy(ctx->items + i, &value, sizeof(type));                          \
         ctx->entries++;                                                        \
         return true;                                                           \
       }                                                                        \

@@ -66,6 +66,8 @@ asm_syscall_handler:
 
 	pop rsp
 
+    sti
+
 	o64 sysret
 
 ; preserve rbx, rsp, rbp, r12, r13, r14, and r15;

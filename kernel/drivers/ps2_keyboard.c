@@ -113,6 +113,7 @@ struct list_fd_ctx listeners;
 
 void keyboard_handler(struct cpu_status *r) {
   (void)r;
+
   u16 c;
   c = inb(PS2_REG_DATA);
   outb(0x20, 0x20);

@@ -52,6 +52,7 @@ struct vfs_fd {
   u32 references;
   u32 outside_references;
 
+  lock_t listeners_lock;
   struct list_listener_ctx listeners;
 
   struct fd_data data;
