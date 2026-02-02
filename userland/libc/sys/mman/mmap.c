@@ -8,7 +8,7 @@
 err_t sa_mmap(void *addr, size_t length, int prot, int flags, u64 fd,
               size_t offset, void **out) {
   return syscall_long(SYS_MMAP, (u64)addr, length, prot, flags, fd, offset,
-                      (u64)out);
+                      (u64)out, 0xDEADBEEF);
 }
 
 void *mmap(void *addr, size_t length, int prot, int flags, int fd,
