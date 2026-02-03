@@ -21,7 +21,7 @@
                       const struct prefix##_ctx *source);                      \
   bool prefix##_find_index_by_value(struct prefix##_ctx *ctx, u64 *index,      \
                                     type value);                               \
-  uint64_t prefix##_num_entries(struct prefix##_ctx *ctx);\
+  uint64_t prefix##_num_entries(struct prefix##_ctx *ctx);                     \
   bool prefix##_set(struct prefix##_ctx *ctx, u64 index, type value);
 
 #define DEFINE_LIST_FUNCTIONS(prefix, type)                                    \
@@ -116,7 +116,7 @@
         if (index) {                                                           \
           *index = i;                                                          \
         }                                                                      \
-	    memcpy(ctx->items + i, &value, sizeof(type));                          \
+        memcpy(ctx->items + i, &value, sizeof(type));                          \
         ctx->entries++;                                                        \
         return true;                                                           \
       }                                                                        \
@@ -125,7 +125,7 @@
   }                                                                            \
                                                                                \
   void prefix##_remove(struct prefix##_ctx *ctx, u64 index) {                  \
-    if (index >= ctx->length) {                                                \
+    if (index >= ctx->capacity) {                                              \
       return;                                                                  \
     }                                                                          \
     assert(ctx->entries != 0);                                                 \
@@ -134,11 +134,12 @@
   }                                                                            \
                                                                                \
   bool prefix##_set(struct prefix##_ctx *ctx, u64 index, type value) {         \
-    if (index >= ctx->length) {                                                \
-      if (!prefix##_increase_size(ctx, ctx->length - index + 128)) {           \
+    if (index >= ctx->capacity) {                                              \
+      if (!prefix##_increase_size(ctx, index - ctx->length + 128)) {           \
         return false;                                                          \
       }                                                                        \
     }                                                                          \
+    ctx->length = max(ctx->length, index + 1);                                 \
     memcpy(ctx->items + index, &value, sizeof(type));                          \
     return true;                                                               \
   }

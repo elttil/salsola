@@ -260,7 +260,7 @@ err_t task_fd_open(u64 *fd, struct sv path, int flags) {
     return err;
   }
 
-  if (!list_fd_add(&task->fds, fd_ptr, fd)) {
+  if (!list_fd_add_or_replace_previous_null(&task->fds, fd_ptr, fd)) {
     return ERROR_NO_MEMORY;
   }
 
@@ -406,7 +406,7 @@ void task_exit(u8 exit_code) {
       continue;
     }
     vfs_close(fd);
-    list_fd_set(&task->fds, i, NULL);
+    list_fd_remove(&task->fds, i);
   }
 
   task_switch(new_task);
@@ -422,7 +422,10 @@ err_t task_fd_close(u64 fd) {
   struct vfs_fd *fd_ptr;
   GET_FD(fd, &fd_ptr);
   vfs_close(fd_ptr);
-  list_fd_set(&get_current_task()->fds, fd, NULL);
+  list_fd_remove(&get_current_task()->fds, fd);
+
+  u64 index;
+  list_fd_find_index_by_value(&get_current_task()->fds, &index, NULL);
   return ERROR_SUCCESS;
 }
 
@@ -634,6 +637,7 @@ err_t task_exec(struct sv file, struct sv *args, u32 num_of_args,
     // FIXME: What do we do here?
     assert(0);
   }
+  vfs_close(fd);
 
   uintptr_t stack_length = 0x5000;
   void *stack_ptr;
