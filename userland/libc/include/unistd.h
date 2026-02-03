@@ -32,6 +32,8 @@ int close(int fd);
 err_t sa_close(u64 fd);
 
 err_t sa_exec(struct sv file, struct sv *args, u32 number_of_args);
+err_t sa_exec_env(struct sv file, struct sv *args, u32 number_of_args,
+                  struct sv *envs, u32 number_of_envs);
 int execvp(const char *file, char *const argv[]);
 int execv(const char *pathname, char *const argv[]);
 

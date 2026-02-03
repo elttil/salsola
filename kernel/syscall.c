@@ -70,7 +70,10 @@ err_t syscall_randomfill(void *buffer, uint32_t size) {
 }
 
 err_t syscall_exec(const char *str, u32 length, char *args[], u32 arg_lengths[],
-                   u32 num_of_args) {
+                   u32 num_of_args, char *envs[], u32 *env_lengths,
+                   u32 num_of_envs) {
+  TRY(mmu_verify_user_pointer(arg_lengths, sizeof(u32) * num_of_args));
+  TRY(mmu_verify_user_pointer(env_lengths, sizeof(u32) * num_of_envs));
   // TODO: Clone argv
   struct sv f;
   TRY(mmu_get_user_sv(str, length, &f));
@@ -81,13 +84,25 @@ err_t syscall_exec(const char *str, u32 length, char *args[], u32 arg_lengths[],
     return ERROR_NO_MEMORY;
   }
 
-  for (u64 i = 0; i < num_of_args; i++) {
+  struct sv *new_envs = kallocarray(num_of_envs, sizeof(struct sv));
+  if (!new_envs) {
+    kfree(new_args);
+    return ERROR_NO_MEMORY;
+  }
+
+  for (u32 i = 0; i < num_of_args; i++) {
     struct sv tmp;
     TRY(mmu_get_user_sv(args[i], arg_lengths[i], &tmp));
     new_args[i] = sv_clone(tmp);
   }
 
-  return task_exec(file, new_args, num_of_args);
+  for (u32 i = 0; i < num_of_envs; i++) {
+    struct sv tmp;
+    TRY(mmu_get_user_sv(envs[i], env_lengths[i], &tmp));
+    new_envs[i] = sv_clone(tmp);
+  }
+
+  return task_exec(file, new_args, num_of_args, new_envs, num_of_envs);
 }
 
 err_t syscall_mmap(void *addr, size_t length, int prot, int flags, int fd,
@@ -172,8 +187,8 @@ err_t syscall_fcntl(int fd, int cmd, int arg) {
 
 u64 syscall_handler(const struct syscall_arguments *regs) {
   u64 syscall = regs->rdi;
-  const u64 args[7] = {regs->rsi, regs->rdx, regs->rbx, regs->r8,
-                       regs->r9,  regs->r10, regs->r12};
+  const u64 args[] = {regs->rsi, regs->rdx, regs->rbx, regs->r8,
+                      regs->r9,  regs->r10, regs->r12, regs->r13};
   switch (syscall) {
   case SYS_OPEN:
     return syscall_open((u64 *)args[0], (char *)args[1], (size_t)args[2],
@@ -198,7 +213,8 @@ u64 syscall_handler(const struct syscall_arguments *regs) {
     return syscall_fork((void *)args[0]);
   case SYS_EXEC:
     return syscall_exec((void *)args[0], args[1], (void *)args[2],
-                        (void *)args[3], args[4]);
+                        (void *)args[3], args[4], (void *)args[5],
+                        (void *)args[6], args[7]);
   case SYS_DUP2:
     return syscall_dup2(args[0], args[1]);
   case SYS_PIPE:

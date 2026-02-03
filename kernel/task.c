@@ -543,19 +543,8 @@ WARN_UNUSED err_t task_mmap(void *addr, size_t length, int prot, int flags,
   return ERROR_SUCCESS;
 }
 
-WARN_UNUSED static err_t setup_stack(void **out, u64 stack_length,
-                                     struct sv *args, u32 num_of_args,
-                                     void **result) {
-  void *stack_pointer;
-  TRY(task_mmap(NULL, stack_length, PROT_READ | PROT_WRITE,
-                MAP_STACK | MAP_ANONYMOUS | MAP_PRIVATE, -1, 0,
-                &stack_pointer));
-  stack_pointer = (void *)((uintptr_t)stack_pointer + stack_length);
-  if (out) {
-    *out = stack_pointer;
-  }
-
-  uintptr_t ptr = (uintptr_t)stack_pointer;
+static void *add_to_stack(void *top, struct sv *args, u32 num_of_args) {
+  uintptr_t ptr = (uintptr_t)top;
 
   char **argv_ptrs = kallocarray(sizeof(char *), num_of_args + 1);
   for (u32 i = 0; i < num_of_args; i++) {
@@ -579,13 +568,43 @@ WARN_UNUSED static err_t setup_stack(void **out, u64 stack_length,
     }
   }
 
-  u64 tmp = ptr;
+  kfree(argv_ptrs);
+  kfree(ptrs);
+  return (void *)ptr;
+}
+
+WARN_UNUSED static err_t setup_stack(void **out, u64 stack_length,
+                                     struct sv *args, u32 num_of_args,
+                                     struct sv *envs, u32 num_of_envs,
+                                     void **result) {
+  void *stack_pointer;
+  TRY(task_mmap(NULL, stack_length, PROT_READ | PROT_WRITE,
+                MAP_STACK | MAP_ANONYMOUS | MAP_PRIVATE, -1, 0,
+                &stack_pointer));
+  stack_pointer = (void *)((uintptr_t)stack_pointer + stack_length);
+  if (out) {
+    *out = stack_pointer;
+  }
+
+  uintptr_t ptr = (uintptr_t)stack_pointer;
+
+  (void)envs;
+  (void)num_of_envs;
+  ptr = (uintptr_t)add_to_stack((void *)ptr, envs, num_of_envs);
+  u64 envp_pointer = ptr;
+
+  ptr = (uintptr_t)add_to_stack((void *)ptr, args, num_of_args);
+  u64 argv_pointer = ptr;
 
   // Hacky thing to fix alignment
   ptr -= 0xF * 2;
   ptr &= ~(0xF);
 
-  char *s = (char *)tmp;
+  ptr -= 0x8;
+  ptr -= sizeof(char **);
+  *(char ***)ptr = (char **)envp_pointer;
+
+  char *s = (char *)argv_pointer;
   ptr -= sizeof(char **);
   *(char ***)ptr = (char **)s;
 
@@ -595,12 +614,11 @@ WARN_UNUSED static err_t setup_stack(void **out, u64 stack_length,
   if (result) {
     *result = (void *)ptr;
   }
-  kfree(argv_ptrs);
-  kfree(ptrs);
   return ERROR_SUCCESS;
 }
 
-err_t task_exec(struct sv file, struct sv *args, u32 num_of_args) {
+err_t task_exec(struct sv file, struct sv *args, u32 num_of_args,
+                struct sv *envs, u32 num_of_envs) {
   struct vfs_fd *fd;
   TRY(elf_open(file, &fd));
 
@@ -619,11 +637,13 @@ err_t task_exec(struct sv file, struct sv *args, u32 num_of_args) {
 
   uintptr_t stack_length = 0x5000;
   void *stack_ptr;
-  assert(ERROR_SUCCESS ==
-         setup_stack(&stack_ptr, stack_length, args, num_of_args, &stack_ptr));
+  assert(ERROR_SUCCESS == setup_stack(&stack_ptr, stack_length, args,
+                                      num_of_args, envs, num_of_envs,
+                                      &stack_ptr));
 
   jump_usermode(entry, (void *)stack_ptr);
   assert(0);
+  return ERROR_SUCCESS;
 }
 
 err_t task_fork(u64 *pid) {

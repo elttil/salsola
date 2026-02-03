@@ -4,15 +4,17 @@
 #include <syscall.h>
 #include <syscalls.h>
 
-err_t sa_exec(struct sv file, struct sv *args, u32 number_of_args) {
-  const char **strs = allocarray(sizeof(char *), number_of_args);
-  u32 *lengths = allocarray(sizeof(u32), number_of_args);
+struct sv *__getenv_array(size_t *length);
+void __getenv_array_free(struct sv *env_array, size_t length);
 
-  for (u32 i = 0; i < number_of_args; i++) {
-    strs[i] = sv_buffer(args[i]);
-    lengths[i] = sv_length(args[i]);
+err_t sa_exec(struct sv file, struct sv *args, u32 number_of_args) {
+  size_t env_array_length;
+  struct sv *env_array = __getenv_array(&env_array_length);
+  if (!env_array) {
+    return ERROR_NO_MEMORY;
   }
 
-  return syscall(SYS_EXEC, (u64)sv_buffer(file), sv_length(file), (u64)strs,
-                 (u64)lengths, number_of_args);
+  err_t err = sa_exec_env(file, args, number_of_args, env_array, env_array_length);
+  __getenv_array_free(env_array, env_array_length);
+  return err;
 }

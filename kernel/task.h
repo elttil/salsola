@@ -93,7 +93,7 @@ struct task {
 bool task_init(void);
 WARN_UNUSED err_t task_fork(u64 *pid);
 void task_legacy_switch(void);
-WARN_UNUSED err_t task_exec(struct sv file, struct sv *args, u32 num_of_args);
+WARN_UNUSED err_t task_exec(struct sv file, struct sv *args, u32 num_of_args, struct sv *envs, u32 num_of_envs);
 WARN_UNUSED err_t task_fd_open(u64 *fd, struct sv path, int flags);
 WARN_UNUSED err_t task_fd_write(u64 fd, const void *buffer, u64 count,
                                 u64 *out);

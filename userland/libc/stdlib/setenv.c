@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 struct env {
   char *name;
@@ -11,7 +12,8 @@ struct env {
   struct env *next;
 };
 
-struct env *env_head = NULL;
+static size_t num_envs = 0;
+static struct env *env_head = NULL;
 
 struct env *internal_getenv(const char *name) {
   struct env *p = env_head;
@@ -21,6 +23,31 @@ struct env *internal_getenv(const char *name) {
     }
   }
   return NULL;
+}
+
+void __getenv_array_free(struct sv *env_array, size_t length) {
+	(void)env_array;
+	(void)length;
+	// TODO:
+}
+
+struct sv *__getenv_array(size_t *length) {
+  struct sv *array = malloc(sizeof(struct sv )*num_envs);
+  if(!array) return NULL;
+
+  struct env *p = env_head;
+  for (size_t i = 0; p; p = p->next,i++) {
+    assert(i < num_envs);
+	
+    size_t l = strlen(p->name)+1+strlen(p->value)+1;
+	char *str = malloc(l);
+    assert(str); // TODO:
+	int rc = snprintf(str, l, "%s=%s", p->name, p->value);
+
+	array[i] = sv_init(str, rc);
+  }
+  if(length) *length = num_envs;
+  return array;
 }
 
 int setenv(const char *name, const char *value, int overwrite) {
@@ -70,5 +97,6 @@ int setenv(const char *name, const char *value, int overwrite) {
   strcpy(new_env->value, value);
   new_env->next = env_head;
   env_head = new_env;
+  num_envs++;
   return 0;
 }
