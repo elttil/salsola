@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <fcntl.h>
 #include <fs/vfs.h>
 #include <kmalloc.h>
 #include <kprintf.h>
@@ -113,6 +114,16 @@ void vfs_notify_can_write(struct vfs_fd *fd, bool can_write) {
     return;
   }
   vfs_notify_listeners(fd);
+}
+
+err_t vfs_truncate(struct vfs_fd *fd, u64 length) {
+  if (!fd) {
+    return ERROR_INVALID_FD;
+  }
+  if (!fd->truncate) {
+    return ERROR_FD_HAS_NO_TRUNCATE;
+  }
+  return fd->truncate(fd, length);
 }
 
 err_t vfs_getdent(struct vfs_fd *fd, struct vfs_dirent *dirp,
@@ -270,5 +281,9 @@ struct vfs_fd *vfs_open(struct sv file, int flags, err_t *err) {
     return NULL;
   }
   fd->mount = mount;
+  fd->flags = flags;
+  if (fd->flags & O_TRUNC) {
+    assert(ERROR_SUCCESS == vfs_truncate(fd, 0));
+  }
   return fd;
 }

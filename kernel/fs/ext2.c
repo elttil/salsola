@@ -2,6 +2,7 @@
 #include <assert.h>
 #include <drivers/ahci.h>
 #include <error.h>
+#include <fcntl.h>
 #include <fs/ext2.h>
 #include <fs/vfs.h>
 #include <kmalloc.h>
@@ -342,7 +343,8 @@ static size_t read_inode(struct ext2_ctx *ctx, u32 inode_num, u8 *data,
   return bytes_read;
 }
 
-err_t ext2_getdent(struct vfs_fd *fd, struct vfs_dirent **dirp, size_t *dirp_size, size_t offset) {
+err_t ext2_getdent(struct vfs_fd *fd, struct vfs_dirent **dirp,
+                   size_t *dirp_size, size_t offset) {
   assert(dirp && dirp_size);
   struct ext2_ctx *ctx = (struct ext2_ctx *)fd->mount->internal_object;
   u32 inode_num = (u32)fd->internal_object;
@@ -350,8 +352,7 @@ err_t ext2_getdent(struct vfs_fd *fd, struct vfs_dirent **dirp, size_t *dirp_siz
   u64 file_size;
   lock_acquire(&ctx->lock_pre_allocated_block);
   u8 *block = get_allocated_block(ctx);
-  (void)read_inode(ctx, inode_num, block, ctx->block_byte_size, 0,
-                   &file_size);
+  (void)read_inode(ctx, inode_num, block, ctx->block_byte_size, 0, &file_size);
 
   direntry_header_t *dir;
 
@@ -377,19 +378,22 @@ err_t ext2_getdent(struct vfs_fd *fd, struct vfs_dirent **dirp, size_t *dirp_siz
       continue;
     }
 
-	if(index != offset){ index++; continue;}
+    if (index != offset) {
+      index++;
+      continue;
+    }
 
-	size_t entry_size = sizeof(struct vfs_dirent) + dir->name_length + 1;
-	if(entry_size > *dirp_size) {
-		*dirp_size = entry_size;
-		*dirp = krealloc(*dirp, *dirp_size);
-	}
-	
-	struct vfs_dirent *d = *dirp;
-	d->d_ino = dir->inode;
-	d->d_namelength = dir->name_length+1;
-	memcpy(d->d_name, data_p + sizeof(direntry_header_t), dir->name_length);
-	d->d_name[dir->name_length] = '\0';
+    size_t entry_size = sizeof(struct vfs_dirent) + dir->name_length + 1;
+    if (entry_size > *dirp_size) {
+      *dirp_size = entry_size;
+      *dirp = krealloc(*dirp, *dirp_size);
+    }
+
+    struct vfs_dirent *d = *dirp;
+    d->d_ino = dir->inode;
+    d->d_namelength = dir->name_length + 1;
+    memcpy(d->d_name, data_p + sizeof(direntry_header_t), dir->name_length);
+    d->d_name[dir->name_length] = '\0';
 
     lock_release(&ctx->lock_pre_allocated_block);
     return ERROR_SUCCESS;
@@ -615,7 +619,7 @@ static int write_inode(struct ext2_ctx *ctx, int inode_num, const void *data,
 
   u32 num_blocks_required = BLOCKS_REQUIRED(fsize, ctx->block_byte_size);
 
-  u32 delta = num_blocks_required - num_blocks_used;
+  i32 delta = num_blocks_required - num_blocks_used;
   if (delta > 0) {
     u32 left = delta;
     u32 written = 0;
@@ -666,7 +670,24 @@ err_t ext2_write(struct vfs_fd *fd, const void *buffer, size_t length,
   }
   */
   struct ext2_ctx *ctx = (struct ext2_ctx *)fd->mount->internal_object;
-  ASSIGN_PTR(rc, write_inode(ctx, inode_num, buffer, length, offset, NULL, 0));
+  bool append = (fd->flags & O_APPEND);
+  ASSIGN_PTR(rc,
+             write_inode(ctx, inode_num, buffer, length, offset, NULL, append));
+  return ERROR_SUCCESS;
+}
+
+err_t ext2_truncate(struct vfs_fd *fd, u64 length) {
+  struct ext2_ctx *ctx = (struct ext2_ctx *)fd->mount->internal_object;
+  u32 inode_num = (u32)fd->internal_object;
+
+  // FIXME: Blocks that are no longer used should be freed.
+  inode_t inode;
+  get_inode_header(ctx, inode_num, &inode);
+
+  inode._upper_32size = length >> 32;
+  inode.low_32size = length & (~((u32)0));
+
+  write_inode_header(ctx, inode_num, &inode);
   return ERROR_SUCCESS;
 }
 
@@ -736,6 +757,7 @@ struct vfs_fd *ext2_open(struct vfs_mount *mount, struct sv file, int flags,
   fd->write = ext2_write;
   fd->getdent = ext2_getdent;
   fd->lseek = ext2_lseek;
+  fd->truncate = ext2_truncate;
   if (FS_TYPE_FILE == type) {
     fd->type = VFS_TYPE_FILE;
   } else if (FS_TYPE_DIRECTORY == type) {

@@ -267,8 +267,8 @@ err_t task_fd_open(u64 *fd, struct sv path, int flags) {
   return ERROR_SUCCESS;
 }
 
-err_t task_fd_getdent(u64 fd, struct vfs_dirent *dirp,
-  size_t dir_entry_size, u64 nentries, u64 *rc) {
+err_t task_fd_getdent(u64 fd, struct vfs_dirent *dirp, size_t dir_entry_size,
+                      u64 nentries, u64 *rc) {
   struct vfs_fd *fd_ptr;
   GET_FD(fd, &fd_ptr);
   return vfs_getdent(fd_ptr, dirp, dir_entry_size, nentries, rc);
@@ -413,7 +413,6 @@ void task_exit(u8 exit_code) {
       continue;
     }
     vfs_close(fd);
-    list_fd_remove(&task->fds, i);
   }
 
   task_switch(new_task);
@@ -423,6 +422,12 @@ err_t task_lseek(u64 fd, off_t offset, int whence, off_t *out) {
   struct vfs_fd *fd_ptr;
   GET_FD(fd, &fd_ptr);
   return vfs_lseek(fd_ptr, offset, whence, out);
+}
+
+err_t task_fd_truncate(u64 fd, u64 length) {
+  struct vfs_fd *fd_ptr;
+  GET_FD(fd, &fd_ptr);
+  return vfs_truncate(fd_ptr, length);
 }
 
 err_t task_fd_close(u64 fd) {

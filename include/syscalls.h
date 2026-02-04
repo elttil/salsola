@@ -17,3 +17,4 @@
 #define SYS_CHDIR 16
 #define SYS_FCNTL 17
 #define SYS_GETDENT 18
+#define SYS_FTRUNCATE 19

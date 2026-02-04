@@ -101,6 +101,7 @@ WARN_UNUSED err_t task_fd_write(u64 fd, const void *buffer, u64 count,
 WARN_UNUSED err_t task_fd_read(u64 fd, void *buffer, u64 count, u64 *out);
 WARN_UNUSED err_t task_fd_getdent(u64 fd, struct vfs_dirent *dirp,
                                   size_t dir_entry_size, u64 nentries, u64 *rc);
+WARN_UNUSED err_t task_fd_truncate(u64 fd, u64 length);
 WARN_UNUSED err_t task_fd_close(u64 fd);
 void *task_sbrk(uintptr_t increment);
 WARN_UNUSED err_t task_lseek(u64 fd, off_t offset, int whence, off_t *out);

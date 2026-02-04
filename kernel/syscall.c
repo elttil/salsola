@@ -194,6 +194,10 @@ err_t syscall_fcntl(int fd, int cmd, int arg) {
   return task_fcntl(fd, cmd, arg);
 }
 
+err_t syscall_ftruncate(u64 fd, u64 length) {
+  return task_fd_truncate(fd, length);
+}
+
 u64 syscall_handler(const struct syscall_arguments *regs) {
   u64 syscall = regs->rdi;
   const u64 args[] = {regs->rsi, regs->rdx, regs->rbx, regs->r8,
@@ -245,6 +249,9 @@ u64 syscall_handler(const struct syscall_arguments *regs) {
   case SYS_GETDENT:
     return syscall_getdent(args[0], (void *)args[1], args[2], args[3],
                            (void *)args[4]);
+    break;
+  case SYS_FTRUNCATE:
+    return syscall_ftruncate(args[0], args[1]);
     break;
   default:
     assert(0);

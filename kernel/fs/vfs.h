@@ -45,9 +45,11 @@ struct vfs_fd {
                 int flags, size_t offset, void **out);
   err_t (*getdent)(struct vfs_fd *fd, struct vfs_dirent **dirp,
                    size_t *dirp_size, size_t offset);
+  err_t (*truncate)(struct vfs_fd *fd, u64 length);
 
   // TODO: Add a lock
   int type;
+  int flags;
   u32 internal_object_type;
   void *internal_object;
   void (*close)(struct vfs_fd *fd);
@@ -84,6 +86,7 @@ WARN_UNUSED err_t vfs_pwrite(struct vfs_fd *fd, const void *buffer,
                              size_t length, size_t offset, size_t *rc);
 WARN_UNUSED err_t vfs_write(struct vfs_fd *fd, const void *buffer,
                             size_t length, size_t *rc);
+WARN_UNUSED err_t vfs_truncate(struct vfs_fd *fd, u64 length);
 void vfs_close(struct vfs_fd *fd);
 void vfs_notify_can_read(struct vfs_fd *fd, bool can_read);
 void vfs_notify_can_write(struct vfs_fd *fd, bool can_write);
