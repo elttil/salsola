@@ -267,6 +267,13 @@ err_t task_fd_open(u64 *fd, struct sv path, int flags) {
   return ERROR_SUCCESS;
 }
 
+err_t task_fd_getdent(u64 fd, struct vfs_dirent *dirp,
+  size_t dir_entry_size, u64 nentries, u64 *rc) {
+  struct vfs_fd *fd_ptr;
+  GET_FD(fd, &fd_ptr);
+  return vfs_getdent(fd_ptr, dirp, dir_entry_size, nentries, rc);
+}
+
 err_t task_fd_read(u64 fd, void *buffer, u64 count, u64 *out) {
   struct vfs_fd *fd_ptr;
   GET_FD(fd, &fd_ptr);
@@ -312,7 +319,7 @@ err_t task_waitfd(int fd, u8 *exit_code, pid_t *pid) {
   if (-1 != fd) {
     struct vfs_fd *fd_ptr;
     GET_FD(fd, &fd_ptr);
-    if (VFS_TYPE_PROCESS != fd_ptr->type) {
+    if (VFS_UNIQUE_TYPE_PROCESS != fd_ptr->internal_object_type) {
       return ERROR_NOT_A_PROCESS;
     }
     task->wait_child_fdptr = fd_ptr;

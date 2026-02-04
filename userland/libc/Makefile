@@ -8,8 +8,9 @@ STDLIB_OBJ=stdlib/setenv.o stdlib/getenv.o stdlib/exit.o
 STRING_OBJ=string/memchr.o string/memcmp.o string/memcpy.o string/memmove.o string/memset.o string/sscanf.o string/strcasecmp.o string/strcat.o string/strchr.o string/strcmp.o string/strcpy.o string/strcspn.o string/strdup.o string/strlcpy.o string/strlen.o string/strncasecmp.o string/strncmp.o string/strncpy.o string/strndup.o string/strnlen.o string/strpbrk.o string/strrchr.o string/strspn.o string/strstr.o string/strtok.o string/strerror.o
 ERRNO_OBJ=errno/error_to_errno.o errno/errno.o
 FCNTL_OBJ=fcntl/fcntl.o fcntl/open.o
+DIRENT_OBJ=dirent/opendir.o dirent/readdir.o dirent/scandir.o dirent/closedir.o
 ASSERT_OBJ=assert/assert.o
-UNISTD_OBJ=unistd/write.o unistd/close.o unistd/lseek.o unistd/sbrk.o unistd/read.o unistd/fork.o unistd/execvp.o unistd/sa_exec.o unistd/dup2.o unistd/execv.o unistd/pipe.o unistd/sa_pipe.o unistd/getpid.o unistd/sa_chdir.o unistd/chdir.o unistd/getcwd.o unistd/getopt.o
+UNISTD_OBJ=unistd/write.o unistd/close.o unistd/lseek.o unistd/sbrk.o unistd/read.o unistd/fork.o unistd/execvp.o unistd/sa_exec.o unistd/dup2.o unistd/execv.o unistd/pipe.o unistd/sa_pipe.o unistd/getpid.o unistd/sa_chdir.o unistd/chdir.o unistd/getcwd.o unistd/getopt.o unistd/sa_exec_env.o
 MALLOC_OBJ=malloc/malloc.o
 MATH_OBJ=math/fmin.o math/ldexp.o math/sqrt.o math/fabs.o math/cos.o math/ceil.o math/acos.o math/pow.o math/fmod.o math/floor.o math/__math_oflow.o math/exp_data.o math/pow_data.o math/__cos.o math/__sin.o math/__rem_pio2.o math/__rem_pio2_large.o math/scalbn.o math/__math_uflow.o math/__math_xflow.o math/__math_invalid.o
 TB_OBJ=tb/sv.o tb/sb.o tb/sha1.o
@@ -17,7 +18,7 @@ SYS_OBJ=sys/random/randomfill.o sys/random/sarandom.o sys/mman/mmap.o sys/stat/s
 
 CTYPE_OBJ=ctype/isalnum.o ctype/isblank.o ctype/isgraph.o ctype/ispunct.o ctype/isxdigit.o ctype/isalpha.o ctype/iscntrl.o ctype/islower.o ctype/isspace.o ctype/tolower.o ctype/isascii.o  ctype/isdigit.o  ctype/isprint.o  ctype/isupper.o  ctype/toupper.o
 
-OBJ=crti.o crt0.o crt1.o crtn.o systemcall.o setup.o ubsan.o $(STDIO_OBJ) $(STRING_OBJ) $(UNISTD_OBJ) $(ERRNO_OBJ) $(FCNTL_OBJ) $(ASSERT_OBJ) $(MALLOC_OBJ) $(SYS_OBJ) $(MATH_OBJ) $(TB_OBJ) $(CTYPE_OBJ) $(STDLIB_OBJ)
+OBJ=crti.o crt0.o crt1.o crtn.o systemcall.o setup.o ubsan.o $(STDIO_OBJ) $(STRING_OBJ) $(UNISTD_OBJ) $(ERRNO_OBJ) $(FCNTL_OBJ) $(ASSERT_OBJ) $(MALLOC_OBJ) $(SYS_OBJ) $(MATH_OBJ) $(TB_OBJ) $(CTYPE_OBJ) $(STDLIB_OBJ) $(DIRENT_OBJ)
 all: libc.a crt0.o
 
 %.o: %.c

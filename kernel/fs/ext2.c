@@ -5,12 +5,18 @@
 #include <fs/ext2.h>
 #include <fs/vfs.h>
 #include <kmalloc.h>
-#include <kprintf.h>
 #include <lock.h>
 #include <log.h>
 #include <stdbool.h>
 #include <string.h>
 #include <sys/types.h>
+
+#define FS_TYPE_FILE 0
+#define FS_TYPE_UNIX_SOCKET 1
+#define FS_TYPE_CHAR_DEVICE 2
+#define FS_TYPE_BLOCK_DEVICE 3
+#define FS_TYPE_DIRECTORY 4
+#define FS_TYPE_LINK 7
 
 #define EXT2_SUPERBLOCK_SECTOR 2
 #define EXT2_ROOT_INODE 2
@@ -336,6 +342,62 @@ static size_t read_inode(struct ext2_ctx *ctx, u32 inode_num, u8 *data,
   return bytes_read;
 }
 
+err_t ext2_getdent(struct vfs_fd *fd, struct vfs_dirent **dirp, size_t *dirp_size, size_t offset) {
+  assert(dirp && dirp_size);
+  struct ext2_ctx *ctx = (struct ext2_ctx *)fd->mount->internal_object;
+  u32 inode_num = (u32)fd->internal_object;
+
+  u64 file_size;
+  lock_acquire(&ctx->lock_pre_allocated_block);
+  u8 *block = get_allocated_block(ctx);
+  (void)read_inode(ctx, inode_num, block, ctx->block_byte_size, 0,
+                   &file_size);
+
+  direntry_header_t *dir;
+
+  uintptr_t ptr = 0;
+  uintptr_t block_offset = 0;
+
+  size_t index = 0;
+
+  for (; ptr <= file_size - sizeof(direntry_header_t);
+       ptr += dir->size, block_offset += dir->size) {
+    if (block_offset >= ctx->block_byte_size) {
+      block_offset %= ctx->block_byte_size;
+      (void)read_inode(ctx, inode_num, block, ctx->block_byte_size,
+                       ptr - block_offset, NULL);
+    }
+    u8 *data_p = block + block_offset;
+
+    dir = (direntry_header_t *)data_p;
+    if (0 == dir->inode || 0 == dir->size) {
+      break;
+    }
+    if (0 == dir->name_length) {
+      continue;
+    }
+
+	if(index != offset){ index++; continue;}
+
+	size_t entry_size = sizeof(struct vfs_dirent) + dir->name_length + 1;
+	if(entry_size > *dirp_size) {
+		*dirp_size = entry_size;
+		*dirp = krealloc(*dirp, *dirp_size);
+	}
+	
+	struct vfs_dirent *d = *dirp;
+	d->d_ino = dir->inode;
+	d->d_namelength = dir->name_length+1;
+	memcpy(d->d_name, data_p + sizeof(direntry_header_t), dir->name_length);
+	d->d_name[dir->name_length] = '\0';
+
+    lock_release(&ctx->lock_pre_allocated_block);
+    return ERROR_SUCCESS;
+  }
+  lock_release(&ctx->lock_pre_allocated_block);
+  return ERROR_READ_EXCEEDS_BOUNDS;
+}
+
 static bool find_inode_in_directory(struct ext2_ctx *ctx, u32 directory_inode,
                                     struct sv file, u32 *inode,
                                     direntry_header_t *entry) {
@@ -357,10 +419,6 @@ static bool find_inode_in_directory(struct ext2_ctx *ctx, u32 directory_inode,
   uintptr_t ptr = 0;
   uintptr_t block_offset = 0;
 
-  //  u8 *data_p = data;
-  //  u8 *data_end = data + allocation_size;
-  //  for (; data_p <= (data_end - sizeof(direntry_header_t)) &&
-  //         (dir = (direntry_header_t *)data_p)->inode;
   for (; ptr <= file_size - sizeof(direntry_header_t);
        ptr += dir->size, block_offset += dir->size) {
 
@@ -653,6 +711,22 @@ struct vfs_fd *ext2_open(struct vfs_mount *mount, struct sv file, int flags,
     return NULL;
   }
 
+  inode_t inode;
+  get_inode_header(ctx, inode_num, &inode);
+
+  u8 type;
+  switch ((inode.types_permissions / 0x1000)) {
+  case 0xA:
+    type = FS_TYPE_LINK;
+    break;
+  case 0x4:
+    type = FS_TYPE_DIRECTORY;
+    break;
+  default:
+    type = FS_TYPE_FILE;
+    break;
+  }
+
   struct vfs_fd *fd = vfs_allocate_fd();
   if (!fd) {
     ASSIGN_PTR(err, ERROR_NO_MEMORY);
@@ -660,8 +734,17 @@ struct vfs_fd *ext2_open(struct vfs_mount *mount, struct sv file, int flags,
   }
   fd->read = ext2_read;
   fd->write = ext2_write;
+  fd->getdent = ext2_getdent;
   fd->lseek = ext2_lseek;
-  fd->type = VFS_TYPE_FILE;
+  if (FS_TYPE_FILE == type) {
+    fd->type = VFS_TYPE_FILE;
+  } else if (FS_TYPE_DIRECTORY == type) {
+    fd->type = VFS_TYPE_DIRECTORY;
+  } else if (FS_TYPE_LINK == type) {
+    assert(0);
+  } else {
+    assert(0);
+  }
   fd->internal_object = (void *)inode_num;
 
   return fd;

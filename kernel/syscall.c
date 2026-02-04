@@ -69,6 +69,15 @@ err_t syscall_randomfill(void *buffer, uint32_t size) {
   return ERROR_SUCCESS;
 }
 
+err_t syscall_getdent(u64 fd, struct vfs_dirent *dirp, size_t dir_entry_size,
+                      u64 nentries, u64 *rc) {
+  // TODO: Avoid multiplication overflow
+  TRY(mmu_verify_user_pointer(dirp, dir_entry_size * nentries));
+  TRY(mmu_verify_user_pointer(rc, sizeof(*rc)));
+
+  return task_fd_getdent(fd, dirp, dir_entry_size, nentries, rc);
+}
+
 err_t syscall_exec(const char *str, u32 length, char *args[], u32 arg_lengths[],
                    u32 num_of_args, char *envs[], u32 *env_lengths,
                    u32 num_of_envs) {
@@ -232,6 +241,10 @@ u64 syscall_handler(const struct syscall_arguments *regs) {
     break;
   case SYS_FCNTL:
     return syscall_fcntl(args[0], args[1], args[2]);
+    break;
+  case SYS_GETDENT:
+    return syscall_getdent(args[0], (void *)args[1], args[2], args[3],
+                           (void *)args[4]);
     break;
   default:
     assert(0);

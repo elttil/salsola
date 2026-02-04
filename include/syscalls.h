@@ -15,3 +15,5 @@
 #define SYS_WAITFD 14
 #define SYS_GETCWD 15
 #define SYS_CHDIR 16
+#define SYS_FCNTL 17
+#define SYS_GETDENT 18

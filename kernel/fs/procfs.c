@@ -34,6 +34,7 @@ struct vfs_fd *task_open(struct vfs_mount *mount, struct sv path, int flags,
 
   struct task *task = mount->internal_object;
   fd->internal_object = task;
+  fd->internal_object_type = VFS_UNIQUE_TYPE_PROCESS;
 
   if (sv_eq(path, C_TO_SV("pid"))) {
     fd->read = task_pid_read;
@@ -62,7 +63,8 @@ err_t open_task_directory(struct task *task, struct vfs_fd **out_fd) {
   }
   fd->mount->internal_object = task;
   fd->internal_object = task;
-  fd->type = VFS_TYPE_PROCESS;
+  fd->internal_object_type = VFS_UNIQUE_TYPE_PROCESS;
+  fd->type = VFS_TYPE_DIRECTORY;
 
   fd->open = task_open;
 

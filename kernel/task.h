@@ -93,11 +93,14 @@ struct task {
 bool task_init(void);
 WARN_UNUSED err_t task_fork(u64 *pid);
 void task_legacy_switch(void);
-WARN_UNUSED err_t task_exec(struct sv file, struct sv *args, u32 num_of_args, struct sv *envs, u32 num_of_envs);
+WARN_UNUSED err_t task_exec(struct sv file, struct sv *args, u32 num_of_args,
+                            struct sv *envs, u32 num_of_envs);
 WARN_UNUSED err_t task_fd_open(u64 *fd, struct sv path, int flags);
 WARN_UNUSED err_t task_fd_write(u64 fd, const void *buffer, u64 count,
                                 u64 *out);
 WARN_UNUSED err_t task_fd_read(u64 fd, void *buffer, u64 count, u64 *out);
+WARN_UNUSED err_t task_fd_getdent(u64 fd, struct vfs_dirent *dirp,
+                                  size_t dir_entry_size, u64 nentries, u64 *rc);
 WARN_UNUSED err_t task_fd_close(u64 fd);
 void *task_sbrk(uintptr_t increment);
 WARN_UNUSED err_t task_lseek(u64 fd, off_t offset, int whence, off_t *out);

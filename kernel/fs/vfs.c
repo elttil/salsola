@@ -69,9 +69,7 @@ static void vfs_notify_listeners(struct vfs_fd *fd) {
       continue;
     }
 
-    lock_acquire(&poll->lock);
     list_listener_add_or_replace_previous_null(&poll->updates, listener, NULL);
-    lock_release(&poll->lock);
 
     listener->has_sent_update = true;
 
@@ -115,6 +113,36 @@ void vfs_notify_can_write(struct vfs_fd *fd, bool can_write) {
     return;
   }
   vfs_notify_listeners(fd);
+}
+
+err_t vfs_getdent(struct vfs_fd *fd, struct vfs_dirent *dirp,
+                  size_t dir_entry_size, u64 nentries, u64 *rc) {
+
+  (void)nentries;
+
+  if (!fd) {
+    return ERROR_INVALID_FD;
+  }
+  if (!fd->getdent) {
+    return ERROR_FD_HAS_NO_GETDENT;
+  }
+  struct vfs_dirent *d = NULL;
+  size_t s = 0;
+  err_t err = fd->getdent(fd, &d, &s, fd->offset);
+  if (ERROR_SUCCESS != err) {
+    return err;
+  }
+
+  size_t entry_length = d->d_namelength + sizeof(struct vfs_dirent) + 1;
+  if (entry_length > dir_entry_size) {
+    return ERROR_BUFFER_TOO_SMALL;
+  }
+
+  fd->offset++;
+
+  memcpy(dirp, d, entry_length);
+  ASSIGN_PTR(rc, 1);
+  return ERROR_SUCCESS;
 }
 
 err_t vfs_pread(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
