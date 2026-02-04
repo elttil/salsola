@@ -231,7 +231,7 @@ u64 syscall_handler(const struct syscall_arguments *regs) {
     syscall_exit(args[0]);
     break;
   case SYS_FCNTL:
-    syscall_fcntl(args[0], args[1], args[2]);
+    return syscall_fcntl(args[0], args[1], args[2]);
     break;
   default:
     assert(0);
