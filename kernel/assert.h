@@ -1,7 +1,7 @@
 #define assert(expr)                                                           \
   {                                                                            \
     if (!(expr)) {                                                             \
-      aFailed(__FILE__, __LINE__);                                             \
+      aFailed(__FILE__, __LINE__, #expr);                                      \
       for (;;)                                                                 \
         ;                                                                      \
     }                                                                          \
@@ -11,4 +11,4 @@
 
 #define ASSERT_BUT_FIXME_PROPOGATE(expr) assert(expr)
 
-void aFailed(char *f, int l);
+void aFailed(char *f, int l, char *expr);
