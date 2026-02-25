@@ -79,7 +79,9 @@ bool release_build = false;
 bool really_fast_build = false;
 bool small_build = false;
 bool ubsan = true;
+bool compress_flag = false;
 bool debug = false;
+bool flag_ramdisk_iso = false;
 
 /* Just appends -flto to LD and CC and removes stupid warnings */
 bool uses_lto = false;
@@ -202,23 +204,34 @@ void rm_object(char *file) {
   free(object_output);
 }
 
-int create_iso_file(void) {
+int create_iso_file(const char *isodir_path, bool compress) {
   int rebuild_is_needed = nob_needs_rebuild1(TARGET ".iso", TARGET ".elf");
   if (!rebuild_is_needed) {
     return 1;
   }
+
+  char t[256];
+  snprintf(t, sizeof(t), "%s/boot/", isodir_path);
+
   Nob_Cmd cmd = {0};
-  nob_cmd_append(&cmd, "mv", TARGET ".elf", "isodir/boot");
+  nob_cmd_append(&cmd, "mv", TARGET ".elf", t);
   if (!nob_cmd_run(&cmd)) {
     return 0;
   }
 
-  nob_cmd_append(&cmd, "grub-mkrescue", "-o", TARGET ".iso", "isodir");
+  // TODO: Check compression --compress=no|xz|gz|lzo
+  if (compress) {
+    nob_cmd_append(&cmd, "grub-mkrescue", "--compress=xz", "-o", TARGET ".iso",
+                   isodir_path);
+  } else {
+    nob_cmd_append(&cmd, "grub-mkrescue", "-o", TARGET ".iso", isodir_path);
+  }
   if (!nob_cmd_run(&cmd)) {
     return 0;
   }
 
-  nob_cmd_append(&cmd, "ln", "isodir/boot/" TARGET ".elf", TARGET ".elf");
+  snprintf(t, sizeof(t), "%s/boot/" TARGET ".elf", isodir_path);
+  nob_cmd_append(&cmd, "ln", t, TARGET ".elf");
   if (!nob_cmd_run(&cmd)) {
     return 0;
   }
@@ -246,6 +259,8 @@ int main(int argc, char **argv) {
   flag_bool_var(&debug, "debug", true, "Boolean flag");
   flag_bool_var(&small_build, "small", false, "Boolean flag");
   flag_bool_var(&ubsan, "ubsan", true, "Boolean flag");
+  flag_bool_var(&flag_ramdisk_iso, "ramdisk", false, "Boolean flag");
+  flag_bool_var(&compress_flag, "compress", false, "Boolean flag");
 
   if (!flag_parse(argc, argv)) {
     usage(argv[0], stderr);
@@ -346,7 +361,9 @@ int main(int argc, char **argv) {
   }
   nob_procs_wait(procs);
 
-  if (!create_iso_file()) {
+  const char *isodir_path = flag_ramdisk_iso ? "isodir_ramdisk" : "isodir";
+
+  if (!create_iso_file(isodir_path, compress_flag)) {
     return 1;
   }
 
