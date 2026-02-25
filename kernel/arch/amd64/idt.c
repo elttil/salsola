@@ -205,16 +205,30 @@ void dump_backtrace(u32 max_frames) {
   struct stackframe *stk = (void *)get_current_sbp();
   kprintf("Stack trace:\n");
   for (u32 frame = 0; stk && frame < max_frames; ++frame) {
-    kprintf("addr2line -e kernel/salsola.elf 0x%x\n", stk->rip);
+    if (stk->rip >= 0xffffff8000000000) {
+      kprintf("addr2line -e kernel/salsola.elf 0x%x\n", stk->rip);
+    } else {
+      if (get_current_task()) {
+        kprintf("addr2line -e sysroot/" SV_FMT " 0x%x\n",
+                SV_FMT_ARG(get_current_task()->program_name), stk->rip);
+      } else {
+        kprintf("addr2line -e unknown 0x%x\n", stk->rip);
+      }
+    }
     stk = stk->rbp;
   }
 }
 
 void page_fault(struct cpu_status *r) {
+  log_enable_screen();
   lock_acquire(&lock_fault);
   (void)r;
   kprintf("Page Fault\n");
   kprintf("CR2: %x\n", cr2_get());
+  if (get_current_task()) {
+    kprintf("Program: " SV_FMT "\n",
+            SV_FMT_ARG(get_current_task()->program_name));
+  }
   kprintf("IP: %x\n", r->iret_rip);
   bool present = (r->error_code & (1 << 0)) ? 1 : 0;
   bool write = (r->error_code & (1 << 1)) ? 1 : 0;
@@ -235,6 +249,7 @@ void page_fault(struct cpu_status *r) {
 }
 
 void opcode_fault(struct cpu_status *r) {
+  log_enable_screen();
   lock_acquire(&lock_fault);
   (void)r;
   kprintf("Invalid opcode\n");
@@ -258,6 +273,7 @@ void opcode_fault(struct cpu_status *r) {
 }
 
 void gpt_fault(struct cpu_status *r) {
+  log_enable_screen();
   lock_acquire(&lock_fault);
   (void)r;
   kprintf("General Protection Fault\n");

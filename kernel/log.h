@@ -9,3 +9,5 @@ void log_char(const char c);
 void klog(int code, char *fmt, ...);
 void dump_backtrace(u32 max_frames);
 void log_enable_screen(void);
+void log_disable_screen(void);
+void log_print_char(char c);

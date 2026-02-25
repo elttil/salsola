@@ -5,6 +5,7 @@
 #include <drivers/pit.h>
 #include <drivers/ps2_keyboard.h>
 #include <drivers/serial.h>
+#include <fcntl.h>
 #include <fs/ext2.h>
 #include <fs/procfs.h>
 #include <fs/ramdisk.h>
@@ -74,47 +75,76 @@ void setup_gs(void) {
   swapgs();
 }
 
+bool path_open(struct sb *out, struct sv directory, struct sv path);
+
 struct multiboot_tag *tags;
 u64 bspid_get();
 void kmain2(void) {
-  timer_init();
   assert(kmalloc_init());
 
-  assert(msr_is_available());
-
-  idt_init();
-
-  assert(apic_enable());
-
-  struct vfs_fd *root_disk = NULL;
   for (struct multiboot_tag *tag = tags; tag->type != MULTIBOOT_TAG_TYPE_END;
        tag = (struct multiboot_tag *)((multiboot_uint8_t *)tag +
                                       ((tag->size + 7) & ~7))) {
     if (MULTIBOOT_TAG_TYPE_FRAMEBUFFER == tag->type) {
       display_driver_init((struct multiboot_tag_framebuffer_common *)tag);
-    } else if (MULTIBOOT_TAG_TYPE_MODULE == tag->type) {
+    }
+  }
+  log_enable_screen();
+  klog(LOG_NOTE, "Log start");
+
+  klog(LOG_NOTE, "Trying to initialize time");
+  timer_init();
+
+  klog(LOG_SUCCESS, "Timer Initialized");
+
+  assert(msr_is_available());
+
+  klog(LOG_SUCCESS, "MSR Check complete");
+
+  idt_init();
+
+  klog(LOG_SUCCESS, "IDT Initialized");
+
+  assert(apic_enable());
+
+  klog(LOG_SUCCESS, "Enabled APIC");
+
+  struct vfs_fd *root_disk = NULL;
+  for (struct multiboot_tag *tag = tags; tag->type != MULTIBOOT_TAG_TYPE_END;
+       tag = (struct multiboot_tag *)((multiboot_uint8_t *)tag +
+                                      ((tag->size + 7) & ~7))) {
+    if (MULTIBOOT_TAG_TYPE_MODULE == tag->type) {
       struct multiboot_tag_module *module = (struct multiboot_tag_module *)tag;
       size_t length = module->mod_end - module->mod_start;
       void *address = mmu_map_frames((void *)module->mod_start, length,
                                      MMU_FLAG_RW | MMU_FLAG_PRESENT);
       root_disk = ramdisk_create(address, length);
+      klog(LOG_NOTE, "Ramdisk found");
     }
   }
 
   interrupts_disable();
   smp_init(tags);
+  klog(LOG_SUCCESS, "SMP Initialized");
 
   mmu_remove_identity();
+  klog(LOG_SUCCESS, "MMU Identity mapping removed");
 
   assert(task_init());
+  klog(LOG_SUCCESS, "Scheduler Initialized");
 
   assert(vfs_add_mount(C_TO_SV("/dev"), ramfs_create()));
+  klog(LOG_SUCCESS, "/dev/ Created");
 
   ahci_init();
+  klog(LOG_SUCCESS, "AHCI Initialized");
   serial_add_file();
+  klog(LOG_SUCCESS, "/dev/serial created");
 
   if (!root_disk) {
     root_disk = vfs_open(C_TO_SV("/dev/sda"), 0, NULL);
+    assert(root_disk);
+    klog(LOG_SUCCESS, "/dev/sda Opened");
   }
 
   assert(vfs_add_mount(C_TO_SV("/"), ext2_create(root_disk)));

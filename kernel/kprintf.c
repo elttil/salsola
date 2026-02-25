@@ -1,5 +1,4 @@
 #include <assert.h>
-#include <drivers/serial.h>
 #include <kprintf.h>
 #include <lock.h>
 #include <math.h>
@@ -8,6 +7,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <typedefs.h>
+#include <log.h>
 
 #define TAB_SIZE 8
 
@@ -375,7 +375,7 @@ int ksnprintf(char *out, size_t size, const char *format, ...) {
 void context_serial_write(struct print_context *ctx, const char *s, int l) {
   (void)ctx;
   for (; l > 0; l--, s++) {
-    serial_print_char(*s);
+    log_print_char(*s);
   }
 }
 

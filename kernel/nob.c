@@ -16,6 +16,7 @@ char *c_files[] = {
     "kpoll.c",
     "timer.c",
     "sb.c",
+    "fonts.c",
     "buffer.c",
     "arch/amd64/smap.c",
     "arch/amd64/hwrng.c",

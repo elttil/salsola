@@ -1,17 +1,48 @@
+#include <drivers/framebuffer.h>
 #include <drivers/serial.h>
 #include <kprintf.h>
 #include <log.h>
 #include <stdarg.h>
-
-int log_to_screen = 0;
 
 struct stackframe {
   struct stackframe *ebp;
   u32 eip;
 };
 
-u32 x = 0;
-u32 y = 0;
+static u32 x = 0;
+static u32 y = 0;
+
+static bool log_to_screen = false;
+
+#define RED 0xFF0000
+#define BLACK 0x000000
+
+void log_enable_screen(void) {
+  if(log_to_screen) return;
+  x = 0;
+  y = 0;
+  log_to_screen = true;
+  framebuffer_clear_screen(RED);
+  klog(LOG_NOTE, "Logging Enabled");
+}
+
+void log_disable_screen(void) {
+  if(!log_to_screen) return;
+  log_to_screen = false;
+  framebuffer_clear_screen(BLACK);
+}
+
+void log_print_char(char c) {
+  serial_print_char(c);
+  if (log_to_screen) {
+    if ('\n' == c) {
+      x = 0;
+      y += 8;
+    }
+    framebuffer_drawfont(x, y, c);
+    x += 8;
+  }
+}
 
 void klog(int code, char *fmt, ...) {
   va_list list;
