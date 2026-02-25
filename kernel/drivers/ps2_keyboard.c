@@ -3,7 +3,7 @@
 #include <fs/ramfs.h>
 #include <fs/vfs.h>
 #include <io.h>
-#include <kprintf.h>
+#include <log.h>
 #include <ringbuffer.h>
 #include <stdbool.h>
 #include <sv.h>
@@ -114,8 +114,7 @@ struct list_fd_ctx listeners;
 void keyboard_handler(struct cpu_status *r) {
   (void)r;
 
-  u16 c;
-  c = inb(PS2_REG_DATA);
+  u16 c = inb(PS2_REG_DATA);
   outb(0x20, 0x20);
 
   int released = 0;
@@ -205,12 +204,132 @@ bool add_keyboard_device(struct sv filename) {
   return true;
 }
 
+void simple_sleep(u64 c) {
+  volatile u64 i = 0;
+  for (; i < c; i++) {
+    if (i == c) {
+      break;
+    }
+  }
+}
+
+void ps2_wait_for_write() {
+  for (size_t i = 0; i < 1000000; i++) {
+    if (!(inb(PS2_REG_STATUS) & (1 << 1))) {
+      return;
+    }
+  }
+}
+
+void ps2_wait_for_read() {
+  for (size_t i = 0; i < 1000000; i++) {
+    if ((inb(PS2_REG_STATUS) & (1 << 0))) {
+      return;
+    }
+  }
+}
+
+static void ps2_command(u8 command) {
+  ps2_wait_for_write();
+  outb(PS2_REG_COMMAND, command);
+}
+
+static u8 ps2_command_call(u8 command) {
+  ps2_wait_for_write();
+  outb(PS2_REG_COMMAND, command);
+  ps2_wait_for_read();
+  return inb(PS2_REG_DATA);
+}
+
+void ps2_disable_ports() {
+  ps2_command(0xAD);
+  ps2_command(0xA7);
+}
+
+void ps2_enable_ports() {
+  ps2_command(0xAE);
+  ps2_command(0xA8);
+}
+
+u8 read_config() {
+  ps2_wait_for_write();
+  outb(PS2_REG_COMMAND, 0x20);
+  ps2_wait_for_read();
+  return inb(PS2_REG_DATA);
+}
+
+void write_config(u8 config) {
+  ps2_wait_for_write();
+  outb(PS2_REG_COMMAND, 0x60);
+  ps2_wait_for_write();
+  outb(PS2_REG_DATA, config);
+}
+
+void nop_handler(struct cpu_status *r) {
+  (void)r;
+  return;
+}
+
 bool ps2_keyboard_init(void) {
+  u8 result;
+  u8 config;
+
   list_fd_init(&listeners);
   if (!ringbuffer_init(&keyboard_buffer, sizeof(struct key_event) * 128)) {
     return false;
   }
   handler_install(0x21, keyboard_handler, 0);
+  handler_install(0x27, nop_handler, 0);
   add_keyboard_device(C_TO_SV("/dev/keyboard"));
+
+  ps2_disable_ports();
+
+  size_t timeout = 1024;
+  for (; timeout > 0;) {
+    timeout--;
+    result = inb(PS2_REG_DATA);
+  }
+
+  config = read_config();
+  config &= ~(1 << 0);
+  config &= ~(1 << 6);
+  config &= ~(1 << 4);
+  write_config(config);
+
+  result = ps2_command_call(0xAA);
+  if (0x55 != result) {
+    klog(LOG_ERROR, "PS2: Self test failed. Expected: 0x55, Got: %02x\n", result);
+    return false;
+  }
+
+  bool is_dual_channel;
+
+  ps2_command(0xA8);
+  config = read_config();
+  is_dual_channel = !(config & (1 << 5));
+  if (is_dual_channel) {
+    ps2_command(0xA7);
+    config &= ~(1 << 1);
+    config &= ~(1 << 5);
+    write_config(config);
+  }
+
+  if (0x00 != (result = ps2_command_call(0xAB))) {
+    klog(LOG_ERROR, "PS2 First Port: Test failed. Expected: 0x00, Got: %02x\n",
+         result);
+    return false;
+  }
+  if (is_dual_channel && 0x00 != (result = ps2_command_call(0xA9))) {
+    klog(LOG_ERROR, "PS2 Second Port: Test failed. Expected: 0x00, Got: %02x\n",
+         result);
+    return false;
+  }
+
+  ps2_enable_ports();
+
+  config = read_config();
+  config |= (1 << 0) | (1 << 6);
+  write_config(config);
+
   return true;
 }
