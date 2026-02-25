@@ -27,6 +27,9 @@ err_t sa_read(int fd, void *buf, u64 count, u64 *out);
 err_t sa_write(int fd, const void *buf, u64 count, u64 *out);
 err_t sa_lseek(u64 fd, off_t offset, int whence, off_t *out);
 
+pid_t fork(void);
+err_t sa_fork(pid_t *pid);
+
 int close(int fd);
 
 err_t sa_close(u64 fd);

@@ -72,7 +72,6 @@ void perror(const char *s);
 int putchar(int c);
 int puts(const char *s);
 int printf(const char *format, ...);
-int fork(void);
 int memcmp(const void *s1, const void *s2, size_t n);
 int wait(int *stat_loc);
 void exit(int status);
