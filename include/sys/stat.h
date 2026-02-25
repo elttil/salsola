@@ -1,6 +1,7 @@
 #ifndef SYS_STAT_H
 #define SYS_STAT_H
 #include <stddef.h>
+#include <error.h>
 #include <sys/types.h>
 #include <time.h>
 
