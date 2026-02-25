@@ -198,6 +198,12 @@ err_t syscall_ftruncate(u64 fd, u64 length) {
   return task_fd_truncate(fd, length);
 }
 
+err_t syscall_namespace_override(char *_path, size_t length, u64 fd) {
+  struct sv path;
+  TRY(mmu_get_user_sv(_path, length, &path));
+  return task_add_namespace_override(path, fd);
+}
+
 u64 syscall_handler(const struct syscall_arguments *regs) {
   u64 syscall = regs->rdi;
   const u64 args[] = {regs->rsi, regs->rdx, regs->rbx, regs->r8,
@@ -252,6 +258,9 @@ u64 syscall_handler(const struct syscall_arguments *regs) {
     break;
   case SYS_FTRUNCATE:
     return syscall_ftruncate(args[0], args[1]);
+    break;
+  case SYS_NAMESPACE_OVERRIDE:
+    return syscall_namespace_override((void *)args[0], args[1], args[2]);
     break;
   default:
     assert(0);

@@ -271,12 +271,15 @@ void vfs_close(struct vfs_fd *fd) {
 
 struct vfs_fd *vfs_open(struct sv file, int flags, err_t *err) {
   ASSIGN_PTR(err, ERROR_SUCCESS);
+  struct vfs_fd *fd = task_find_namespace_override(file);
+  if(fd) return fd;
+
   struct vfs_mount *mount = vfs_find_mount(file);
   assert(mount); // TODO
   assert(mount->open);
 
   (void)sv_take(file, &file, sv_length(mount->path));
-  struct vfs_fd *fd = mount->open(mount, file, flags, err);
+  fd = mount->open(mount, file, flags, err);
   if (!fd) {
     return NULL;
   }

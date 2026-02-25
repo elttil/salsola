@@ -47,4 +47,7 @@ err_t sa_chdir(struct sv path);
 
 int chdir(const char *path);
 char *getcwd(char *buf, size_t size);
+
+int getopt(int argc, char *const *argv, const char *optstring);
+err_t sa_bindfd(u64 fd, struct sv path);
 #endif

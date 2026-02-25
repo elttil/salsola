@@ -70,6 +70,7 @@ bool task_init(void) {
   task_head->active_kpoll = NULL;
   task_head->program_name = sv_clone(C_TO_SV("KERNEL"));
   task_head->is_dead = false;
+  task_head->namespace = NULL;
 
   lock_release(&task_head->cwd_lock);
   sb_init(&task_head->cwd);
@@ -119,6 +120,10 @@ err_t task_fd_dup2(u64 oldfd, u64 newfd) {
 
   // TODO: Maybe don't do the task_fd_close if this fails?
   TRY(list_fd_set(&task->fds, newfd, fd_ptr));
+
+  struct vfs_fd *fd_ptr2;
+  GET_FD(newfd, &fd_ptr2);
+  assert(fd_ptr2 == fd_ptr);
 
   fd_ptr->references++;
   return ERROR_SUCCESS;
@@ -662,6 +667,34 @@ err_t task_exec(struct sv file, struct sv *args, u32 num_of_args,
   return ERROR_SUCCESS;
 }
 
+struct vfs_fd *task_find_namespace_override(struct sv path) {
+  struct task *task = get_current_task();
+  struct namespace_override *o = task->namespace;
+  for(;o;o = o->next) {
+	if(sv_eq(o->path, path)) { o->fd->references++; return o->fd; }
+  }
+ return NULL;
+}
+
+static err_t add_namespace_override(struct task *task, struct sv path, struct vfs_fd *fd) {
+  struct namespace_override *n;
+  TRY(kmalloc2((void **)&n, sizeof(*n)));
+  // TODO: Fix OOM
+  n->path = sv_clone(path);
+  assert(fd);
+  n->fd = fd;
+  n->fd->references++;
+  n->next = task->namespace;
+  task->namespace = n;
+  return ERROR_SUCCESS;
+}
+
+err_t task_add_namespace_override(struct sv path, u64 fd) {
+  struct vfs_fd *fd_ptr;
+  GET_FD(fd, &fd_ptr);
+  return add_namespace_override(get_current_task(), path, fd_ptr);
+}
+
 err_t task_fork(u64 *pid) {
   struct task *parent = get_current_task();
   assert(parent);
@@ -680,6 +713,12 @@ err_t task_fork(u64 *pid) {
   task->children = NULL;
   task->program_name = sv_clone(parent->program_name);
   task->is_dead = false;
+
+  task->namespace = NULL;
+  struct namespace_override *o = parent->namespace;
+  for(;o;o = o->next) {
+	add_namespace_override(task, o->path, o->fd);
+  }
 
   lock_acquire(&parent->cwd_lock);
   assert(sb_clone(&task->cwd, &parent->cwd)); // TODO: OOM

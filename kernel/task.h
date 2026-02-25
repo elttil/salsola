@@ -45,6 +45,12 @@ struct child_list {
   struct child_list *next;
 };
 
+struct namespace_override {
+	struct sv path;
+	struct vfs_fd *fd;
+	struct namespace_override *next;
+};
+
 struct task {
   // NOTE: Assembly code depends upon the TCB being at the start
   struct tcb tcb;
@@ -65,6 +71,8 @@ struct task {
   struct mmu_directory *directory;
   struct kpoll *active_kpoll;
   struct wait wait;
+
+  struct namespace_override *namespace;
 
   bool wait_for_child;
   struct vfs_fd *wait_child_fdptr;
@@ -118,4 +126,6 @@ err_t task_waitfd(int fd, u8 *exit_code, pid_t *pid);
 err_t task_chdir(struct sv path);
 err_t task_getcwd(char *buffer, size_t size);
 err_t task_fcntl(int fd, int cmd, int arg);
+err_t task_add_namespace_override(struct sv path, u64 fd);
+struct vfs_fd *task_find_namespace_override(struct sv path);
 #endif // TASK_H
