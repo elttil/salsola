@@ -51,7 +51,7 @@
       return false;                                                            \
     }                                                                          \
     ctx->items = new_allocation;                                               \
-    ctx->capacity += new_capacity;                                             \
+    ctx->capacity = new_capacity;                                              \
     return true;                                                               \
   }                                                                            \
                                                                                \
