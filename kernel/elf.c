@@ -102,11 +102,9 @@ err_t elf_load_file(struct vfs_fd *fd, void **ds, void **entry) {
   if (ds) {
     *ds = (void *)end_of_code;
   }
-  vfs_close(fd);
   ASSIGN_PTR(entry, (void *)header.e_entry);
   return ERROR_SUCCESS;
 
 cleanup:
-  vfs_close(fd);
   return err;
 }

@@ -250,13 +250,12 @@ err_t vfs_mmap(struct vfs_fd *fd, void *addr, size_t length, int prot,
 }
 
 void vfs_close(struct vfs_fd *fd) {
+  assert(0 == fd->outside_references && 0 != fd->references);
   // Check if there are existing mmaps that rely upon the vfs_fd object
   // existing
   if (0 != fd->outside_references) {
     return;
   }
-
-  assert(0 != fd->references);
 
   fd->references--;
   if (0 != fd->references) {
