@@ -58,6 +58,7 @@ bool task_init(void) {
   lock_acquire(&task_list_lock);
   err_t err = kmalloc2((void **)&task_head, sizeof(struct task));
   if (ERROR_SUCCESS != err) {
+    lock_release(&task_list_lock);
     return false;
   }
   task_head->children = NULL;
@@ -376,17 +377,21 @@ void task_exit(u8 exit_code) {
     new_task = task_next(new_task);
 
     if (new_task->is_dead) {
-      continue;
+      goto retry;
     }
 
     if (new_task == get_current_task()) {
-      continue;
+      goto retry;
     }
 
     if (new_task->in_use) {
-      continue;
+      goto retry;
     }
     break;
+  retry:
+    lock_release(&task_list_lock);
+    __asm__("hlt");
+    lock_acquire(&task_list_lock);
   }
 
   assert(!new_task->in_use && !new_task->is_dead);
