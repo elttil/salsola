@@ -1,4 +1,5 @@
 #include <stddef.h>
+#include <string.h>
 
 // https://pubs.opengroup.org/onlinepubs/9699919799/
 void *memset(void *s, int c, size_t n) {
