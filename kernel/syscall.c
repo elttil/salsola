@@ -204,6 +204,10 @@ err_t syscall_namespace_override(char *_path, size_t length, u64 fd) {
   return task_add_namespace_override(path, fd);
 }
 
+void syscall_msleep(u64 ms) {
+  return task_msleep(ms);
+}
+
 u64 syscall_handler(const struct syscall_arguments *regs) {
   u64 syscall = regs->rdi;
   const u64 args[] = {regs->rsi, regs->rdx, regs->rbx, regs->r8,
@@ -261,6 +265,9 @@ u64 syscall_handler(const struct syscall_arguments *regs) {
     break;
   case SYS_NAMESPACE_OVERRIDE:
     return syscall_namespace_override((void *)args[0], args[1], args[2]);
+    break;
+  case SYS_MSLEEP:
+    syscall_msleep(args[0]);
     break;
   default:
     assert(0);

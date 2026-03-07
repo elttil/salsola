@@ -72,6 +72,8 @@ struct task {
   struct kpoll *active_kpoll;
   struct wait wait;
 
+  u64 sleep_until;
+
   struct namespace_override *namespace;
 
   bool wait_for_child;
@@ -128,4 +130,5 @@ err_t task_getcwd(char *buffer, size_t size);
 err_t task_fcntl(int fd, int cmd, int arg);
 err_t task_add_namespace_override(struct sv path, u64 fd);
 struct vfs_fd *task_find_namespace_override(struct sv path);
+void task_msleep(u64 ms);
 #endif // TASK_H

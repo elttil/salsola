@@ -10,6 +10,7 @@
 #include <stddef.h>
 #include <sys/mman.h>
 #include <task.h>
+#include <timer.h>
 
 DEFINE_LIST_FUNCTIONS(list_fd, struct vfs_fd *);
 DEFINE_LIST_FUNCTIONS(list_memory, struct memory_mapping *);
@@ -72,6 +73,7 @@ bool task_init(void) {
   task_head->program_name = sv_clone(C_TO_SV("KERNEL"));
   task_head->is_dead = false;
   task_head->namespace = NULL;
+  task_head->sleep_until = 0;
 
   lock_release(&task_head->cwd_lock);
   sb_init(&task_head->cwd);
@@ -718,6 +720,7 @@ err_t task_fork(u64 *pid) {
   task->children = NULL;
   task->program_name = sv_clone(parent->program_name);
   task->is_dead = false;
+  task->sleep_until = 0;
 
   task->namespace = NULL;
   struct namespace_override *o = parent->namespace;
@@ -840,19 +843,40 @@ err_t task_fcntl(int fd, int cmd, int arg) {
   return ERROR_FCNTL_INVALID_FLAGS;
 }
 
+void task_msleep(u64 ms) {
+  u64 current = timer_get_ms();
+  get_current_task()->sleep_until = current + ms;
+  task_legacy_switch();
+}
+
 void task_legacy_switch(void) {
   lock_acquire(&task_list_lock);
 
+  u64 current_time = timer_get_ms();
+
   struct task *new_task = get_current_task();
-  for (;;) {
+  for (size_t i = 0;;) {
     new_task = task_next(new_task);
 
     if (new_task->is_dead) {
       continue;
     }
 
+    if (new_task->sleep_until > current_time) {
+      continue;
+    }
+
     if (new_task == get_current_task()) {
+      current_time = timer_get_ms();
+      if (i < 10) {
+        i++;
+        continue;
+      }
       break;
+    }
+
+    if (0 == new_task->pid) {
+      continue;
     }
 
     if (new_task->in_use) {
@@ -887,13 +911,13 @@ void task_new_core_init(void) {
     for (;;) {
       new_task = task_next(new_task);
 
-      if (new_task->is_dead) {
-        continue;
-      }
-
       if (new_task == task_head) {
         lock_release(&task_list_lock);
         goto redo;
+      }
+
+      if (new_task->is_dead) {
+        continue;
       }
 
       if (new_task->in_use) {
