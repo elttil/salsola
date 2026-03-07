@@ -3,7 +3,6 @@
 #include <elf.h>
 #include <fcntl.h>
 #include <fs/vfs.h>
-#include <kprintf.h>
 #include <mmu.h>
 #include <typedefs.h>
 
@@ -80,7 +79,8 @@ err_t elf_load_file(struct vfs_fd *fd, void **ds, void **entry) {
     pages_to_allocate /= 0x1000;
 
     if (!mmu_allocate_region((void *)p_vaddr, pages_to_allocate * 0x1000,
-                             MMU_FLAG_RW | MMU_FLAG_USER)) {
+                             MMU_FLAG_RW | MMU_FLAG_USER |
+                                 MMU_FLAG_FAKE_ALLOCATION)) {
       err = ERROR_GENERIC_TODO;
       goto cleanup;
     }
@@ -89,8 +89,6 @@ err_t elf_load_file(struct vfs_fd *fd, void **ds, void **entry) {
     if (e > end_of_code) {
       end_of_code = e;
     }
-
-    memset((void *)program_header.p_vaddr, 0, program_header.p_memsz);
 
     // 2. Copy p_filesz bytes from p_offset to p_vaddr
     assert(ERROR_SUCCESS == vfs_pread(fd, (void *)program_header.p_vaddr,

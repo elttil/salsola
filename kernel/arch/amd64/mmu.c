@@ -16,6 +16,7 @@ bool active_bootstrap = true;
 void flush_tlb(void);
 
 #define PAGE_FLAG_PRESENT (1 << 0)
+#define NULL_FRAME 0
 
 struct PT {
   uintptr_t page[512];
@@ -44,6 +45,9 @@ struct PML4T {
 static bool check_virtual_region_is_free(void *address, void **physical,
                                          bool allocate, bool use_frame,
                                          void *frame, u32 flags);
+static uintptr_t *get_page(void *src, void **next);
+static bool get_page2(void *address, bool allocate_parents, int flags,
+                      void ***page);
 
 extern struct PML4T PML4T;
 
@@ -296,7 +300,7 @@ err_t mmu_setup_random_region(void *address, size_t length, bool is_userspace,
 
 // FIXME: WARNING: The allocation is not guaranteed to be linear in the
 // physical memory mapping.
-void *ksbrk_physical(size_t length, void **physical) {
+void *ksbrk_physical(size_t length, void **physical, bool fake) {
   heap_end = mmu_find_free_virtual_region(length);
   void *rc = heap_end;
 
@@ -322,7 +326,9 @@ void *ksbrk_physical(size_t length, void **physical) {
     // get lost forever, but it **should** not be that much. Maybe
     // allocate an extra table in boot.s to avoid this hack?
     bool was_free = check_virtual_region_is_free(
-        heap_end, &physical, true, false, NULL, MMU_FLAG_RW | MMU_FLAG_PRESENT);
+        heap_end, &physical, true, false, NULL,
+        MMU_FLAG_RW | MMU_FLAG_PRESENT |
+            ((fake) ? MMU_FLAG_FAKE_ALLOCATION : 0));
     assert(was_free);
 
     if (!r) {
@@ -334,12 +340,14 @@ void *ksbrk_physical(size_t length, void **physical) {
     *physical = r;
   }
 
-  memset(rc, 0, align_up_int(length, PAGE_SIZE));
+  if (!fake) {
+    memset(rc, 0, align_up_int(length, PAGE_SIZE));
+  }
   return rc;
 }
 
 void *ksbrk(size_t length) {
-  return ksbrk_physical(length, NULL);
+  return ksbrk_physical(length, NULL, false);
 }
 
 void *mmu_virtual_to_physical(void *address, bool *exists) {
@@ -476,7 +484,47 @@ void allocate_next_pt(void *address, u32 flags) {
   //  uint64_t pt_index = ((uintptr_t)address >> PT_SHIFT) & 0x1FF;
 
   allocate_pt(pml4t_index, pdpt_index, pdt_index, flags);
+  if (pdt_index + 1 > 0x1FF) {
+    return;
+  }
   allocate_pt(pml4t_index, pdpt_index, pdt_index + 1, flags);
+}
+
+static bool get_page2(void *address, bool allocate_parents, int flags,
+                      void ***page) {
+  const int PT_SHIFT = 12;
+  const int PDT_SHIFT = 12 + 9 * 1;
+  const int PDPT_SHIFT = 12 + 9 * 2;
+  const int PML4_SHIFT = 12 + 9 * 3;
+
+  uint64_t pml4t_index = ((uintptr_t)address >> PML4_SHIFT) & 0x1FF;
+  uint64_t pdpt_index = ((uintptr_t)address >> PDPT_SHIFT) & 0x1FF;
+  uint64_t pdt_index = ((uintptr_t)address >> PDT_SHIFT) & 0x1FF;
+  uint64_t pt_index = ((uintptr_t)address >> PT_SHIFT) & 0x1FF;
+
+  struct mmu_directory *directory = mmu_get_active_directory();
+  if (allocate_parents) {
+    allocate_pt(pml4t_index, pdpt_index, pdt_index, flags);
+  } else {
+    if (!(directory->pml4t->physical[pml4t_index] & PAGE_FLAG_PRESENT)) {
+      return false;
+    }
+    if (!(directory->pml4t->pdpt[pml4t_index]->physical[pdpt_index] &
+          PAGE_FLAG_PRESENT)) {
+      return false;
+    }
+    if (!(directory->pml4t->pdpt[pml4t_index]
+              ->pdt[pdpt_index]
+              ->physical[pdt_index] &
+          PAGE_FLAG_PRESENT)) {
+      return false;
+    }
+  }
+  ASSIGN_PTR(page, (void **)&directory->pml4t->pdpt[pml4t_index]
+                       ->pdt[pdpt_index]
+                       ->pt[pdt_index]
+                       ->page[pt_index]);
+  return true;
 }
 
 // if allocate == false:
@@ -528,11 +576,17 @@ static bool check_virtual_region_is_free(void *address, void **physical,
   if (!(((uintptr_t)*p) & PAGE_FLAG_PRESENT)) {
     // Region does not exist and we allocate it.
     if (allocate) {
-      if (!use_frame) {
+      if (!use_frame && !(flags & MMU_FLAG_FAKE_ALLOCATION)) {
         frame = get_frame(true, 1);
         if (!frame) {
           return false;
         }
+      }
+      if (flags & MMU_FLAG_FAKE_ALLOCATION) {
+        assert(!use_frame);
+        frame = NULL_FRAME;
+        flags &= 0xF;
+        flags &= ~(MMU_FLAG_RW);
       }
       *p = frame;
       *p = (void *)((uintptr_t)*p | flags | MMU_FLAG_PRESENT);
@@ -575,7 +629,54 @@ void set_sbp(void *);
 
 void goto_function_with_stack(void *, void *);
 
+size_t total_region_allocation = 0;
+
+bool mmu_check_fake_allocation(void *address, bool allocate) {
+  volatile void **ptr;
+  if (!get_page2(address, false, 0, (void ***)&ptr)) {
+    return false;
+  }
+  uintptr_t a = (uintptr_t)*ptr;
+  uintptr_t frame = a & ~((uintptr_t)0xFFF);
+
+  if (frame != NULL_FRAME) {
+    return false;
+  }
+
+  if (!allocate) {
+    return true;
+  }
+
+  uintptr_t mod = (uintptr_t)*ptr;
+  mod &= 0xFFF;
+  mod |= (uintptr_t)get_frame(true, 1) | MMU_FLAG_RW;
+  *ptr = (void *)mod;
+  flush_tlb();
+  void *va = (void *)(((uintptr_t)address) & ~(0xFFF));
+  memset(va, 0, PAGE_SIZE);
+  return true;
+}
+
 bool mmu_allocate_region(void *address, size_t length, int flags) {
+  if (flags & MMU_FLAG_FAKE_ALLOCATION) {
+    assert(flags & MMU_FLAG_RW);
+    for (size_t i = 0x0; i < length; i += PAGE_SIZE) {
+      assert(check_virtual_region_is_free((void *)((uintptr_t)address + i),
+                                          NULL, true, true, NULL_FRAME,
+                                          (flags & 0xF) | MMU_FLAG_PRESENT));
+    }
+    memset(address, 0, PAGE_SIZE);
+    for (size_t i = 0x0; i < length; i += PAGE_SIZE) {
+      volatile void **ptr;
+      assert(get_page2(address + i, false, 0, (void ***)&ptr));
+      uintptr_t a = (uintptr_t)*ptr;
+      *ptr = (void *)(a & ~(MMU_FLAG_RW));
+    }
+    flush_tlb();
+    return true;
+  }
+
+  total_region_allocation += length;
   for (size_t i = 0x0; i < length; i += PAGE_SIZE) {
     assert(check_virtual_region_is_free((void *)((uintptr_t)address + i), NULL,
                                         true, false, NULL,
@@ -811,6 +912,7 @@ void set_frame_region(void *start, void *end, bool value) {
   }
 }
 
+void mmu_enable_write_protection(void);
 int mmu_init(void *multiboot_header) {
   struct mmu_directory *active_directory = &orig_active_directory;
   kernel_threads[core_id_get()].active_directory = active_directory;
@@ -861,6 +963,7 @@ int mmu_init(void *multiboot_header) {
                        true);
     }
   }
+  set_frame(NULL_FRAME, true);
 
   for (size_t i = 0; i < 512; i++) {
     uintptr_t p = active_directory->pml4t->physical[i] + 0xFFFFFF8000000000;
@@ -908,6 +1011,8 @@ int mmu_init(void *multiboot_header) {
     allocate_next_pt(heap_end + 0x1000 * 1024 * i,
                      MMU_FLAG_PRESENT | MMU_FLAG_RW);
   }
+
+  mmu_enable_write_protection();
 
   flush_tlb();
   return 1;

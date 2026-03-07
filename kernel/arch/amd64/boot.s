@@ -123,7 +123,6 @@ _start:
 
     mov edi, PT
 	mov eax, 0x00000003
-    ;mov ecx, 512
     mov ecx, 511
     
 .SetEntry:
@@ -227,4 +226,11 @@ loop:
 flush_tlb:
     mov rax, cr3
     mov cr3, rax
+	ret
+
+extern mmu_enable_write_protection
+mmu_enable_write_protection:
+	mov rax, cr0
+	or rax, (1 << 16)
+	mov cr0, rax
 	ret

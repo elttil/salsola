@@ -11,6 +11,7 @@
 #define MMU_FLAG_RW (1 << 1)
 #define MMU_FLAG_USER (1 << 2)
 #define MMU_FLAG_PCD (1 << 4)
+#define MMU_FLAG_FAKE_ALLOCATION (1 << 9)
 
 #define align_up_int(address, alignment)                                       \
   ((0 == ((uintptr_t)address) % ((uintptr_t)alignment))                        \
@@ -38,7 +39,7 @@ struct mmu_directory {
 };
 
 void *ksbrk(size_t length);
-void *ksbrk_physical(size_t length, void **physical);
+void *ksbrk_physical(size_t length, void **physical, bool fake);
 int mmu_init(void *multiboot_header);
 void *mmu_virtual_to_physical(void *address, bool *exists);
 void *mmu_physical_to_virtual(void *address, bool *exists);
@@ -61,4 +62,5 @@ err_t mmu_setup_random_region(void *address, size_t length, bool is_userspace,
 void *mmu_map_frames_to_region(void *src, size_t length, void *virtual,
                                int flags);
 err_t mmu_verify_user_c_string(const char *ptr, size_t *size);
+bool mmu_check_fake_allocation(void *address, bool allocate);
 #endif // MMU_H

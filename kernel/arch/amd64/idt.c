@@ -220,6 +220,9 @@ void dump_backtrace(u32 max_frames) {
 }
 
 void page_fault(struct cpu_status *r) {
+  if (mmu_check_fake_allocation((void *)cr2_get(), true)) {
+    return;
+  }
   log_enable_screen();
   lock_acquire(&lock_fault);
   (void)r;

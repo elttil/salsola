@@ -35,7 +35,7 @@ void *kmalloc_align(size_t s, void **physical) {
   // TODO: It should reuse virtual regions so that it does not run out
   // of address space.
   void *rc;
-  if (!(rc = ksbrk_physical(s, physical))) {
+  if (!(rc = ksbrk_physical(s, physical, false))) {
     return NULL;
   }
   return rc;

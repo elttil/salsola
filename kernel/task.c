@@ -481,14 +481,14 @@ WARN_UNUSED static err_t allocate(struct memory_mapping *map, void *addr,
 
   if (flags & MAP_ANONYMOUS) {
     void *ptr;
-    TRY(mmu_setup_random_region(addr, length, true, true,
-                                MMU_FLAG_RW | MMU_FLAG_USER, &ptr));
+    TRY(mmu_setup_random_region(
+        addr, length, true, true,
+        MMU_FLAG_RW | MMU_FLAG_USER | MMU_FLAG_FAKE_ALLOCATION, &ptr));
     map->fd = NULL;
     map->address = ptr;
     map->length = length;
     if (out) {
       *out = ptr;
-      memset(*out, 0, length);
     }
     return ERROR_SUCCESS;
   }
