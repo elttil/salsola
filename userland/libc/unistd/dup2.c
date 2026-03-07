@@ -10,8 +10,8 @@ err_t sa_dup2(u64 oldfd, u64 newfd) {
 
 int dup2(int oldfd, int newfd) {
   err_t err;
-if(ERROR_SUCCESS == (err = sa_dup2(oldfd, newfd))) {
+  if (ERROR_SUCCESS == (err = sa_dup2(oldfd, newfd))) {
     return newfd;
-    }
+  }
   RC_ERROR_TO_ERRNO(err);
 }

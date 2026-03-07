@@ -55,4 +55,8 @@ int getopt(int argc, char *const *argv, const char *optstring);
 err_t sa_bindfd(u64 fd, struct sv path);
 
 void msleep(u64 ms);
+int ftruncate(int fd, off_t length);
+
+err_t sa_dup2(u64 oldfd, u64 newfd);
+int dup2(int oldfd, int newfd);
 #endif
