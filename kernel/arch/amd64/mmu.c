@@ -719,7 +719,7 @@ void copy_frame(void *physical_dst, void *physical_src) {
 }
 
 bool clone_pt(struct PT *orig_pt, struct PT **new_pt, void *virtual_address,
-              void **physical, struct list_memory_ctx *maps) {
+              void **physical) {
   *new_pt = safe_allocation(sizeof(struct PT), physical);
   if (!*new_pt) {
     return false;
@@ -727,43 +727,14 @@ bool clone_pt(struct PT *orig_pt, struct PT **new_pt, void *virtual_address,
 
   for (int i = 0; i < 512; i++, virtual_address += MMU_PAGE_RANGE) {
     int flags = orig_pt->page[i] & 0xFFF;
-    if (!(flags & PAGE_FLAG_PRESENT)) {
+    if (!(flags & MMU_FLAG_PRESENT)) {
       continue;
     }
 
-    if (!maps) {
-      goto skip_checks;
-    }
-    // TODO: This is probably way too many instructions to perform for
-    // every single frame. This can absolutely be optimized.
-    bool should_copy_frame = true;
-    for (u64 j = 0;; j++) {
-      struct memory_mapping *map;
-      if (!list_memory_get(maps, j, &map)) {
-        break;
-      }
-      if (!map) {
-        continue;
-      }
-      if (!((map->address <= virtual_address) &&
-            ((uintptr_t)virtual_address <=
-             (uintptr_t)map->address + map->length))) {
-        continue;
-      }
-      if ((map->flags & MAP_ANONYMOUS)) {
-        should_copy_frame = true;
-        break;
-      }
-      if (map->flags & MAP_SHARED) {
-        should_copy_frame = false;
-        (*new_pt)->page[i] = orig_pt->page[i];
-        continue;
-      }
-    }
-    if (!should_copy_frame) {
+    if (flags & MMU_FLAG_SHARED) {
+      (*new_pt)->page[i] = orig_pt->page[i];
       continue;
     }
-  skip_checks:
 
     (*new_pt)->page[i] = (uintptr_t)get_frame(true, 1) | flags;
     assert((*new_pt)->page[i]); // TODO:
@@ -774,8 +745,7 @@ bool clone_pt(struct PT *orig_pt, struct PT **new_pt, void *virtual_address,
 }
 
 bool clone_pdt(struct PDT *orig_pdt, struct PDT **new_pdt,
-               void *virtual_address, void **physical,
-               struct list_memory_ctx *maps) {
+               void *virtual_address, void **physical) {
   *new_pdt = safe_allocation(sizeof(struct PDT), physical);
   if (!*new_pdt) {
     return false;
@@ -787,7 +757,7 @@ bool clone_pdt(struct PDT *orig_pdt, struct PDT **new_pdt,
       continue;
     }
     assert(clone_pt(orig_pdt->pt[i], &((*new_pdt)->pt[i]), virtual_address,
-                    (void **)&((*new_pdt)->physical[i]), maps));
+                    (void **)&((*new_pdt)->physical[i])));
     (*new_pdt)->physical[i] |= flags;
   }
 
@@ -795,8 +765,7 @@ bool clone_pdt(struct PDT *orig_pdt, struct PDT **new_pdt,
 }
 
 bool clone_pdpt(struct PDPT *orig_pdpt, struct PDPT **new_pdpt,
-                void *virtual_address, void **physical,
-                struct list_memory_ctx *maps) {
+                void *virtual_address, void **physical) {
   *new_pdpt = safe_allocation(sizeof(struct PDPT), physical);
   if (!*new_pdpt) {
     return false;
@@ -837,7 +806,7 @@ struct mmu_directory *mmu_clone_directory(struct mmu_directory *directory,
       continue;
     }
     assert(clone_pdpt(directory->pml4t->pdpt[i], &pml4t->pdpt[i],
-                      virtual_address, (void **)&pml4t->physical[i], maps));
+                      virtual_address, (void **)&pml4t->physical[i]));
     pml4t->physical[i] |= flags;
   }
 
@@ -887,8 +856,7 @@ void mmu_init_for_new_core(void (*main)(void)) {
   // Set the directory now so we can do allocations
   mmu_set_directory(base_directory);
 
-  struct mmu_directory *new_directory =
-      mmu_clone_directory(base_directory, NULL);
+  struct mmu_directory *new_directory = mmu_clone_directory(base_directory);
   if (!new_directory) {
     assert(0);
     return;

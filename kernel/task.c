@@ -461,7 +461,7 @@ struct PML4T {
 // NOTE: This function is called from the assembly function
 // `weird_switch` and therefore should not have its interface changed.
 void task_create_directory(struct task *task, struct task *parent) {
-  task->directory = mmu_clone_directory(parent->directory, &parent->mappings);
+  task->directory = mmu_clone_directory(parent->directory);
   task->tcb.cr3 = (u64)task->directory->physical;
 }
 

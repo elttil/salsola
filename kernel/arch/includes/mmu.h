@@ -11,7 +11,10 @@
 #define MMU_FLAG_RW (1 << 1)
 #define MMU_FLAG_USER (1 << 2)
 #define MMU_FLAG_PCD (1 << 4)
+// AVL Flags (See AMD64 Manual Section 5.4 Page-Translation-Table Entry
+// Fields (page 152)
 #define MMU_FLAG_FAKE_ALLOCATION (1 << 9)
+#define MMU_FLAG_SHARED (1 << 10)
 
 #define align_up_int(address, alignment)                                       \
   ((0 == ((uintptr_t)address) % ((uintptr_t)alignment))                        \
@@ -45,8 +48,7 @@ void *mmu_virtual_to_physical(void *address, bool *exists);
 void *mmu_physical_to_virtual(void *address, bool *exists);
 void *mmu_map_frames(void *src, size_t length, u16 flags);
 void mmu_update_stack(void (*function)());
-struct mmu_directory *mmu_clone_directory(struct mmu_directory *directory,
-                                          struct list_memory_ctx *maps);
+struct mmu_directory *mmu_clone_directory(struct mmu_directory *directory);
 struct mmu_directory *mmu_get_active_directory(void);
 void mmu_set_directory(struct mmu_directory *directory);
 void mmu_unmap_frames(void *src, u64 length, bool free_frames);

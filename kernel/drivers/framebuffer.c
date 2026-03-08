@@ -96,7 +96,7 @@ err_t framebuffer_mmap(struct vfs_fd *fd, void *addr, size_t length, int prot,
   void *r;
   TRY(mmu_setup_random_region(addr, length, true, false, 0, &r));
   r = mmu_map_frames_to_region(to_allocate, allocation_size, r,
-                               MMU_FLAG_RW | MMU_FLAG_USER | MMU_FLAG_PCD);
+                               MMU_FLAG_RW | MMU_FLAG_USER | MMU_FLAG_SHARED);
   ASSIGN_PTR(out, r);
   return ERROR_SUCCESS;
 }
