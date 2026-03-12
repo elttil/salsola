@@ -15,7 +15,7 @@
 DEFINE_LIST_FUNCTIONS(list_fd, struct vfs_fd *);
 DEFINE_LIST_FUNCTIONS(list_memory, struct memory_mapping *);
 
-lock_t task_list_lock;
+rwlock_t task_list_lock;
 struct task *task_head = NULL;
 struct task *pid1_task = NULL;
 u64 active_pid = 0;
@@ -54,12 +54,12 @@ void task_delete_maps(struct task *task) {
 }
 
 bool task_init(void) {
-  lock_release(&task_list_lock);
+  rwlock_init(&task_list_lock);
 
-  lock_acquire(&task_list_lock);
+  rwlock_write_acquire(&task_list_lock);
   err_t err = kmalloc2((void **)&task_head, sizeof(struct task));
   if (ERROR_SUCCESS != err) {
-    lock_release(&task_list_lock);
+    rwlock_write_release(&task_list_lock);
     return false;
   }
   task_head->children = NULL;
@@ -85,7 +85,7 @@ bool task_init(void) {
 
   task_head->directory = mmu_get_active_directory();
 
-  lock_release(&task_list_lock);
+  rwlock_write_release(&task_list_lock);
 
   set_current_task(task_head);
 
@@ -93,7 +93,7 @@ bool task_init(void) {
 }
 
 err_t task_get_from_pid(u64 pid, struct task **out) {
-  lock_acquire(&task_list_lock);
+  rwlock_read_acquire(&task_list_lock);
   struct task *p = task_head;
   for (; p; p = p->next) {
     if (p->pid == pid) {
@@ -101,11 +101,11 @@ err_t task_get_from_pid(u64 pid, struct task **out) {
         *out = p;
         p->outside_reference++;
       }
-      lock_release(&task_list_lock);
+      rwlock_read_release(&task_list_lock);
       return ERROR_SUCCESS;
     }
   }
-  lock_release(&task_list_lock);
+  rwlock_read_release(&task_list_lock);
   return ERROR_TASK_NOT_FOUND;
 }
 
@@ -367,7 +367,7 @@ void task_exit(u8 exit_code) {
   struct task *task = get_current_task();
   assert(task != pid1_task);
 
-  lock_acquire(&task_list_lock);
+  rwlock_read_acquire(&task_list_lock);
 
   lock_acquire(&task->death_lock);
   task->is_dead = true;
@@ -391,9 +391,9 @@ void task_exit(u8 exit_code) {
     }
     break;
   retry:
-    lock_release(&task_list_lock);
+    rwlock_read_release(&task_list_lock);
     __asm__("hlt");
-    lock_acquire(&task_list_lock);
+    rwlock_read_acquire(&task_list_lock);
   }
 
   assert(!new_task->in_use && !new_task->is_dead);
@@ -401,6 +401,8 @@ void task_exit(u8 exit_code) {
   task->in_use = false;
   new_task->in_use = true;
 
+  // NOTE: A write lock isn't required here since only the parent
+  // controls the lifetime of their children.
   {
     lock_acquire(&task->child_list_lock);
     struct child_list *p = task->children;
@@ -414,7 +416,7 @@ void task_exit(u8 exit_code) {
     lock_release(&task->child_list_lock);
   }
 
-  lock_release(&task_list_lock);
+  rwlock_read_release(&task_list_lock);
 
   task_delete_maps(task);
 
@@ -761,7 +763,7 @@ err_t task_fork(u64 *pid) {
     fd->references++;
   }
 
-  lock_acquire(&task_list_lock);
+  rwlock_write_acquire(&task_list_lock);
 
   struct child_list *entry = kmalloc(sizeof(struct child_list));
   entry->task = task;
@@ -778,7 +780,7 @@ err_t task_fork(u64 *pid) {
   // create a new directory.
   u64 _pid = weird_switch(task, parent);
 
-  lock_release(&task_list_lock);
+  rwlock_write_release(&task_list_lock);
   ASSIGN_PTR(pid, _pid);
   return ERROR_SUCCESS;
 }
@@ -790,12 +792,12 @@ void task_switch(struct task *task) {
 
   mmu_lazy_set_directory(get_current_task()->directory);
 
-  lock_acquire(&task_list_lock);
+  rwlock_write_acquire(&task_list_lock);
   if (old) {
     old->in_use = false;
   }
   switch_to_task(old, task);
-  lock_release(&task_list_lock);
+  rwlock_write_release(&task_list_lock);
 }
 
 WARN_UNUSED static struct task *task_next(struct task *task) {
@@ -850,7 +852,7 @@ void task_msleep(u64 ms) {
 }
 
 void task_legacy_switch(void) {
-  lock_acquire(&task_list_lock);
+  rwlock_read_acquire(&task_list_lock);
 
   u64 current_time = timer_get_ms();
 
@@ -889,14 +891,14 @@ void task_legacy_switch(void) {
   }
 
   if (new_task == get_current_task()) {
-    lock_release(&task_list_lock);
+    rwlock_read_release(&task_list_lock);
     return;
   }
   assert(!new_task->in_use && !new_task->is_dead);
 
   new_task->in_use = true;
 
-  lock_release(&task_list_lock);
+  rwlock_read_release(&task_list_lock);
 
   task_switch(new_task);
 }
@@ -905,14 +907,14 @@ void task_new_core_init(void) {
   struct task *new_task = task_head;
   for (;;) {
   redo:
-    lock_acquire(&task_list_lock);
+    rwlock_read_acquire(&task_list_lock);
     new_task = task_head;
 
     for (;;) {
       new_task = task_next(new_task);
 
       if (new_task == task_head) {
-        lock_release(&task_list_lock);
+        rwlock_read_release(&task_list_lock);
         goto redo;
       }
 
@@ -929,7 +931,7 @@ void task_new_core_init(void) {
 
     new_task->in_use = true;
 
-    lock_release(&task_list_lock);
+    rwlock_read_release(&task_list_lock);
     break;
   }
 

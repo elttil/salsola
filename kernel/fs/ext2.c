@@ -55,7 +55,7 @@ struct ext2_ctx {
   lock_t lock_pre_allocated_block;
   void *pre_allocated_block;
   // TODO: Maybe allocate this differently
-  lock_t lock_cache;
+  rwlock_t lock_cache;
   struct ext2_block_cache cache[EXT2_NUM_CACHE];
 };
 
@@ -223,7 +223,7 @@ static int allocate_block(struct ext2_ctx *ctx, inode_t *inode, u32 index,
 
 static void read_block(struct ext2_ctx *ctx, u32 block, void *address,
                        size_t size, size_t offset) {
-  lock_acquire(&ctx->lock_cache);
+  rwlock_read_acquire(&ctx->lock_cache);
   bool reuse_cache = false;
 read_block_redo:
   int index = -1;
@@ -273,11 +273,22 @@ read_block_redo:
 
   cache->last_usage = rdtsc();
 
-  lock_release(&ctx->lock_cache);
+  rwlock_read_release(&ctx->lock_cache);
 }
 
 static void write_block(struct ext2_ctx *ctx, u32 block, const void *address,
                         size_t size, size_t offset) {
+  rwlock_write_acquire(&ctx->lock_cache);
+  for (int i = 0; i < EXT2_NUM_CACHE; i++) {
+    if (!ctx->cache[i].in_use) {
+      continue;
+    }
+    if (block == ctx->cache[i].block_number) {
+      ctx->cache[i].in_use = false;
+      break;
+    }
+  }
+  rwlock_write_release(&ctx->lock_cache);
   // TODO: Cache
   assert(ERROR_SUCCESS == vfs_pwrite(ctx->fd, address, size,
                                      block * ctx->block_byte_size + offset,
@@ -804,7 +815,7 @@ struct vfs_mount *ext2_create(struct vfs_fd *fd) {
     return NULL;
   }
   lock_release(&ctx->lock_ctx);
-  lock_release(&ctx->lock_cache);
+  rwlock_init(&ctx->lock_cache);
   lock_release(&ctx->lock_pre_allocated_block);
 
   ctx->fd = fd;
