@@ -5,9 +5,11 @@
 #include "./flag.h"
 
 char *asm_files[] = {
-    "arch/amd64/lock.s", "arch/amd64/smp_asm.s",     "arch/amd64/idt_asm.s",
-    "arch/amd64/io.s",   "arch/amd64/boot.s",        "arch/amd64/msr.s",
-    "arch/amd64/regs.s", "arch/amd64/task_switch.s", "arch/amd64/smap_asm.s",
+    "arch/amd64/spinlock.s", "arch/amd64/smp_asm.s",
+    "arch/amd64/idt_asm.s",  "arch/amd64/io.s",
+    "arch/amd64/boot.s",     "arch/amd64/msr.s",
+    "arch/amd64/regs.s",     "arch/amd64/task_switch.s",
+    "arch/amd64/smap_asm.s",
 };
 
 char *c_files[] = {
@@ -53,6 +55,7 @@ char *c_files[] = {
     "drivers/serial.c",
     "kprintf.c",
     "string.c",
+    "lock.c",
 };
 
 #define ARRAY_LEN(array) ((sizeof(array)) / (sizeof(array[0])))
