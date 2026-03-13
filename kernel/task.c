@@ -294,6 +294,19 @@ err_t task_fd_write(u64 fd, const void *buffer, u64 count, u64 *out) {
   return vfs_write(fd_ptr, buffer, count, out);
 }
 
+err_t task_fd_pread(u64 fd, void *buffer, u64 count, size_t offset, u64 *out) {
+  struct vfs_fd *fd_ptr;
+  GET_FD(fd, &fd_ptr);
+  return vfs_pread(fd_ptr, buffer, count, offset, out);
+}
+
+err_t task_fd_pwrite(u64 fd, const void *buffer, u64 count, size_t offset,
+                     u64 *out) {
+  struct vfs_fd *fd_ptr;
+  GET_FD(fd, &fd_ptr);
+  return vfs_pwrite(fd_ptr, buffer, count, offset, out);
+}
+
 static struct task *get_dead_child(struct task *task, struct vfs_fd *fd) {
   lock_acquire(&task->child_list_lock);
 

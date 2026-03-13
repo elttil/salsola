@@ -62,6 +62,19 @@ err_t syscall_read(u64 fd, void *buffer, u64 count, u64 *out) {
   return task_fd_read(fd, buffer, count, out);
 }
 
+err_t syscall_pwrite(u64 fd, const void *buffer, u64 count, size_t offset,
+                     u64 *out) {
+  TRY(mmu_verify_user_pointer(buffer, count));
+  TRY(mmu_verify_user_pointer(out, sizeof(u64)));
+  return task_fd_pwrite(fd, buffer, count, offset, out);
+}
+
+err_t syscall_pread(u64 fd, void *buffer, u64 count, size_t offset, u64 *out) {
+  TRY(mmu_verify_user_pointer(buffer, count));
+  TRY(mmu_verify_user_pointer(out, sizeof(u64)));
+  return task_fd_pread(fd, buffer, count, offset, out);
+}
+
 err_t syscall_randomfill(void *buffer, uint32_t size) {
   // TODO: Crash the process upon error.
   TRY(mmu_verify_user_pointer(buffer, size));
@@ -269,6 +282,12 @@ u64 syscall_handler(const struct syscall_arguments *regs) {
   case SYS_MSLEEP:
     syscall_msleep(args[0]);
     break;
+  case SYS_PREAD:
+    return syscall_pread(args[0], (void *)args[1], args[2], args[3],
+                         (u64 *)args[4]);
+  case SYS_PWRITE:
+    return syscall_pwrite(args[0], (void *)args[1], args[2], args[3],
+                          (u64 *)args[4]);
   default:
     assert(0);
     break;

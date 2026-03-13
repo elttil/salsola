@@ -131,4 +131,7 @@ err_t task_fcntl(int fd, int cmd, int arg);
 err_t task_add_namespace_override(struct sv path, u64 fd);
 struct vfs_fd *task_find_namespace_override(struct sv path);
 void task_msleep(u64 ms);
+err_t task_fd_pread(u64 fd, void *buffer, u64 count, size_t offset, u64 *out);
+err_t task_fd_pwrite(u64 fd, const void *buffer, u64 count, size_t offset,
+                     u64 *out);
 #endif // TASK_H
