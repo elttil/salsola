@@ -45,6 +45,7 @@ int sv_partial_eq(struct sv a, struct sv b);
 struct sv sv_trim_left(struct sv s, size_t n);
 struct sv sv_clone(struct sv s);
 struct sv sv_clone_from_c(const char *s);
+int sv_clone_err(struct sv s, struct sv *out);
 char *sv_copy_to_c(struct sv s, char *out, size_t buffer_length);
 int64_t sv_parse_number(struct sv input, struct sv *rest, int *got_num);
 uint64_t sv_parse_unsigned_number(struct sv input, struct sv *rest,

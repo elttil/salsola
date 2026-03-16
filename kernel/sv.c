@@ -273,13 +273,23 @@ struct sv sv_trim_left(struct sv s, size_t n) {
   return s;
 }
 
-struct sv sv_clone(struct sv s) {
+int sv_clone_err(struct sv s, struct sv *out) {
   struct sv new_sv;
   new_sv.length = s.length;
   char *new_string = kmalloc(s.length);
+  if (!new_string) {
+    return 0;
+  }
   assert(new_string);
   memcpy(new_string, s.s, s.length);
   new_sv.s = new_string;
+  ASSIGN_PTR(out, new_sv);
+  return 1;
+}
+
+struct sv sv_clone(struct sv s) {
+  struct sv new_sv;
+  assert(sv_clone_err(s, &new_sv));
   return new_sv;
 }
 

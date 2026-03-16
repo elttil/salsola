@@ -62,6 +62,12 @@ bool task_init(void) {
     rwlock_write_release(&task_list_lock);
     return false;
   }
+  if (!sv_clone_err(C_TO_SV("KERNEL"), &task_head->program_name)) {
+    kfree(task_head);
+    rwlock_write_release(&task_list_lock);
+    return false;
+  }
+
   task_head->children = NULL;
   lock_release(&task_head->death_lock);
   lock_release(&task_head->child_list_lock);
@@ -70,7 +76,6 @@ bool task_init(void) {
   task_head->next = NULL;
   task_head->pid = active_pid;
   task_head->active_kpoll = NULL;
-  task_head->program_name = sv_clone(C_TO_SV("KERNEL"));
   task_head->is_dead = false;
   task_head->namespace = NULL;
   task_head->sleep_until = 0;
@@ -693,17 +698,23 @@ err_t task_exec(struct sv file, struct sv *args, u32 num_of_args,
 struct vfs_fd *task_find_namespace_override(struct sv path) {
   struct task *task = get_current_task();
   struct namespace_override *o = task->namespace;
-  for(;o;o = o->next) {
-	if(sv_eq(o->path, path)) { o->fd->references++; return o->fd; }
+  for (; o; o = o->next) {
+    if (sv_eq(o->path, path)) {
+      o->fd->references++;
+      return o->fd;
+    }
   }
- return NULL;
+  return NULL;
 }
 
-static err_t add_namespace_override(struct task *task, struct sv path, struct vfs_fd *fd) {
+static err_t add_namespace_override(struct task *task, struct sv path,
+                                    struct vfs_fd *fd) {
   struct namespace_override *n;
   TRY(kmalloc2((void **)&n, sizeof(*n)));
-  // TODO: Fix OOM
-  n->path = sv_clone(path);
+  if (!sv_clone_err(path, &n->path)) {
+    kfree(n);
+    return ERROR_NO_MEMORY;
+  }
   assert(fd);
   n->fd = fd;
   n->fd->references++;
@@ -725,6 +736,10 @@ err_t task_fork(u64 *pid) {
   struct task *task;
   err_t err = kmalloc2((void **)&task, sizeof(struct task));
   if (ERROR_SUCCESS != err) {
+    return ERROR_NO_MEMORY;
+  }
+  if (!sv_clone_err(parent->program_name, &task->program_name)) {
+    kfree(task);
     return ERROR_NO_MEMORY;
   }
 
