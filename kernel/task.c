@@ -258,6 +258,23 @@ err_t task_getcwd(char *buffer, size_t size) {
   return ERROR_SUCCESS;
 }
 
+err_t task_fd_recvfd(u64 fd, u64 *out_fd) {
+  struct task *task = get_current_task();
+
+  struct vfs_fd *fd_ptr;
+  struct vfs_fd *out_ptr;
+  GET_FD(fd, &fd_ptr);
+
+  TRY(vfs_recvfd(fd_ptr, &out_ptr));
+
+  if (!list_fd_add_or_replace_previous_null(&task->fds, out_ptr, out_fd)) {
+    vfs_close(out_ptr);
+    return ERROR_NO_MEMORY;
+  }
+
+  return ERROR_SUCCESS;
+}
+
 err_t task_fd_open(u64 *fd, struct sv path, int flags) {
   struct task *task = get_current_task();
 

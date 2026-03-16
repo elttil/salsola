@@ -134,4 +134,5 @@ void task_msleep(u64 ms);
 err_t task_fd_pread(u64 fd, void *buffer, u64 count, size_t offset, u64 *out);
 err_t task_fd_pwrite(u64 fd, const void *buffer, u64 count, size_t offset,
                      u64 *out);
+err_t task_fd_recvfd(u64 fd, u64 *out_fd);
 #endif // TASK_H

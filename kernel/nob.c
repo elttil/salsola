@@ -15,6 +15,7 @@ char *asm_files[] = {
 char *c_files[] = {
     "fs/ramdisk.c",
     "fs/procfs.c",
+    "fs/ipc.c",
     "kpoll.c",
     "timer.c",
     "sb.c",

@@ -221,6 +221,10 @@ void syscall_msleep(u64 ms) {
   return task_msleep(ms);
 }
 
+err_t syscall_recvfd(fd_t fd, fd_t *out_fd) {
+  return task_fd_recvfd(fd, out_fd);
+}
+
 u64 syscall_handler(const struct syscall_arguments *regs) {
   u64 syscall = regs->rdi;
   const u64 args[] = {regs->rsi, regs->rdx, regs->rbx, regs->r8,
@@ -288,6 +292,8 @@ u64 syscall_handler(const struct syscall_arguments *regs) {
   case SYS_PWRITE:
     return syscall_pwrite(args[0], (void *)args[1], args[2], args[3],
                           (u64 *)args[4]);
+  case SYS_RECVFD:
+    return syscall_recvfd(args[0], (void *)args[1]);
   default:
     assert(0);
     break;

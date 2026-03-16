@@ -176,6 +176,16 @@ err_t vfs_pread(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
   return err;
 }
 
+err_t vfs_recvfd(struct vfs_fd *fd, struct vfs_fd **out) {
+  if (!fd) {
+    return ERROR_INVALID_FD;
+  }
+  if (!fd->recvfd) {
+    return ERROR_FD_HAS_NO_RECVFD;
+  }
+  return fd->recvfd(fd, out);
+}
+
 err_t vfs_read(struct vfs_fd *fd, void *buffer, size_t length, size_t *rc) {
   size_t p;
   err_t err = vfs_pread(fd, buffer, length, fd->offset, &p);

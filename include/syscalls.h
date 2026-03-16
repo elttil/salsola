@@ -22,3 +22,4 @@
 #define SYS_MSLEEP 21
 #define SYS_PREAD 23
 #define SYS_PWRITE 24
+#define SYS_RECVFD 25
