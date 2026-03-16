@@ -269,6 +269,7 @@ err_t task_fd_open(u64 *fd, struct sv path, int flags) {
   }
 
   if (!list_fd_add_or_replace_previous_null(&task->fds, fd_ptr, fd)) {
+    vfs_close(fd_ptr);
     return ERROR_NO_MEMORY;
   }
 
