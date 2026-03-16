@@ -65,4 +65,7 @@ err_t sa_pread(int fd, void *buf, u64 count, u64 offset, u64 *out);
 
 ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset);
 ssize_t pread(int fd, void *buf, size_t count, off_t offset);
+
+err_t sa_recvfd(u64 fd, u64 *out_fd);
+int recvfd(int fd);
 #endif
