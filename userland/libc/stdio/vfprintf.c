@@ -1,4 +1,6 @@
 #include <assert.h>
+#include <math.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -14,6 +16,68 @@ const char HEX_SET[0x10] = {'0', '1', '2', '3', '4', '5', '6', '7',
       assert(0);                                                               \
     *(int *)(_r) += _rc;                                                       \
   }
+
+int fprint_float(FILE *f, double fl, int prefix, int zero_padding,
+                 int right_padding) {
+  const char *char_set = "0123456789";
+  const int base = 10;
+  int c = 0;
+  char str[32];
+  int i = 0;
+
+  int is_signed = 0;
+
+  int n = (int)fl;
+  fl -= (float)n;
+  if (n < 0 || fl < 0.0f) {
+    is_signed = 1;
+    n *= -1;
+  }
+
+  fl = fabs(fl);
+
+  for (size_t j = 0; i < 6; j++) {
+    fl *= 10.f;
+    str[(5 - i)] = char_set[(int)fl % base];
+    i++;
+  }
+  str[i] = '.';
+  i++;
+
+  if (0 == n) {
+    str[i] = char_set[0];
+    i++;
+  } else {
+    for (; n != 0 && i < 32; i++, n /= base) {
+      str[i] = char_set[(n % base)];
+    }
+  }
+
+  if (is_signed) {
+    str[i] = '-';
+    i++;
+  }
+
+  char t = (zero_padding) ? '0' : ' ';
+  int orig_i = i;
+
+  if (!right_padding) {
+    for (; prefix - orig_i > 0; prefix--) {
+      FILE_WRITE(f, &t, 1, &c);
+    }
+  }
+
+  for (i--; i >= 0; i--) {
+    FILE_WRITE(f, &(str[i]), 1, &c);
+  }
+
+  if (right_padding) {
+    for (; prefix - orig_i > 0; prefix--) {
+      FILE_WRITE(f, &t, 1, &c);
+    }
+  }
+  return c;
+}
 
 int fprint_num(FILE *f, long long n, int base, char *char_set, int prefix,
                int zero_padding, int right_padding) {
@@ -220,6 +284,16 @@ int vfprintf(FILE *f, const char *fmt, va_list ap) {
             fprint_int(f, va_arg(ap, int), prefix, zero_padding, right_padding);
       }
       long_level = 0;
+      cont = 0;
+      break;
+    case 'f':
+      if (-1 != precision) {
+        zero_padding = 1;
+        prefix = precision;
+        right_padding = 0;
+      }
+      rc += fprint_float(f, va_arg(ap, double), prefix, zero_padding,
+                         right_padding);
       cont = 0;
       break;
     case 'u':
