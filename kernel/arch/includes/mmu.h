@@ -67,4 +67,7 @@ void *mmu_map_frames_to_region(void *src, size_t length, void *virtual,
 err_t mmu_verify_user_c_string(const char *ptr, size_t *size);
 bool mmu_check_fake_allocation(void *address, bool allocate);
 u64 mmu_num_free_frames(void);
+void *mmu_alloc_with_guardpage(size_t length);
+size_t mmu_get_guardpage_allocation_size(void *ptr);
+void mmu_free_guardpage_allocation(void *ptr);
 #endif // MMU_H

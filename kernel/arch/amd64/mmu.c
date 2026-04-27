@@ -101,6 +101,13 @@ static inline bool set_frame(void *address, bool state, bool getlock) {
   }
   uintptr_t a = (uintptr_t)address;
   a /= 0x1000;
+  // Ignore deallocations of null frames.
+  if (a == NULL_FRAME && !state) {
+    if (getlock) {
+      lock_release(&frame_lock);
+    }
+    return true;
+  }
   size_t index = a / 64;
   if (index >= NUM_OF_FRAMES) {
     if (getlock) {
@@ -308,6 +315,67 @@ void mmu_free_directory(struct mmu_directory *dir) {
   kfree(dir);
 }
 
+static inline void assign_guardpage(void *ptr) {
+  volatile void **pg;
+  assert(get_page2(ptr, false, 0, (void ***)&pg));
+  uintptr_t a = (uintptr_t)*pg;
+  uintptr_t frame = a & ~((uintptr_t)0xFFF);
+
+  u8 flags = a & 0xFFF;
+  assert(flags & MMU_FLAG_PRESENT);
+
+  // Deallocate the frame.
+  set_frame((void *)frame, false, true);
+
+  // Turn it into a guardpage.
+  flags &= ~(MMU_FLAG_RW);
+  frame = NULL_FRAME;
+  uintptr_t result = frame | flags;
+  *pg = (void *)result;
+
+  assert(get_page2(ptr, false, 0, (void ***)&pg));
+  assert((uintptr_t)*pg == result);
+}
+
+void mmu_free_guardpage_allocation(void *ptr) {
+  size_t s = mmu_get_guardpage_allocation_size(ptr);
+  s += PAGE_SIZE * 2;
+  uintptr_t p = (uintptr_t)ptr;
+  p -= PAGE_SIZE;
+  mmu_unmap_frames((void *)p, s + PAGE_SIZE * 2, true);
+}
+
+size_t mmu_get_guardpage_allocation_size(void *ptr) {
+  size_t s = 0;
+  uintptr_t p = (uintptr_t)ptr;
+  for (;;) {
+    volatile void **pg;
+    assert(get_page2((void *)p, false, 0, (void ***)&pg));
+    uintptr_t a = (uintptr_t)*pg;
+    uintptr_t frame = a & ~((uintptr_t)0xFFF);
+    if (NULL_FRAME == frame) {
+      break;
+    }
+    s += PAGE_SIZE;
+    p += PAGE_SIZE;
+  }
+  return s;
+}
+
+void *mmu_alloc_with_guardpage(size_t length) {
+  void *ptr;
+  size_t l = align_up_int(length, PAGE_SIZE);
+  err_t err = mmu_setup_random_region(NULL, l + PAGE_SIZE * 2, false, true,
+                                      MMU_FLAG_RW, &ptr);
+  if (ERROR_SUCCESS != err) {
+    return NULL;
+  }
+  void *rc = (void *)((uintptr_t)ptr + PAGE_SIZE);
+  assign_guardpage(ptr);
+  assign_guardpage((void *)((uintptr_t)ptr + PAGE_SIZE + l));
+  return rc;
+}
+
 err_t mmu_setup_random_region(void *address, size_t length, bool is_userspace,
                               bool allocate, int flags, void **out) {
   // TODO: Use the address as a suggestion as to where the region should
@@ -321,8 +389,10 @@ err_t mmu_setup_random_region(void *address, size_t length, bool is_userspace,
       address = csprng_get_uniform(kernel_region_start);
       assert(!(address >= kernel_region_start));
     } else {
-      // TODO:
-      assert(0);
+      const u64 kernel_region_start = 0xffffff8000000000;
+      address = csprng_get_uniform(0xffffffffffffffff - kernel_region_start) +
+                kernel_region_start;
+      assert(!(address <= kernel_region_start));
     }
 
     address &= ~(0xFFF);
