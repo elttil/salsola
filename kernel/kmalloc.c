@@ -16,9 +16,6 @@ lock_t heap_lock;
 
 // #define NO_SLAB
 
-#define IS_FREE (1 << 0)
-#define IS_FINAL (1 << 1)
-
 // This is sqrt(SIZE_MAX+1), as s1*s2 <= SIZE_MAX
 // if both s1 < MUL_NO_OVERFLOW and s2 < MUL_NO_OVERFLOW
 #define MUL_NO_OVERFLOW ((size_t)1 << (sizeof(size_t) * 4))
@@ -28,10 +25,6 @@ static inline bool is_multiplication_safe(size_t a, size_t b) {
     return false;
   }
   return true;
-}
-
-u64 delta_page(u64 a) {
-  return 0x1000 - (a % 0x1000);
 }
 
 void *kmalloc_align(size_t s, void **physical) {
@@ -113,6 +106,9 @@ struct slab *find_slab(size_t s) {
 #endif // NO_SLAB
 
 int kmalloc_init(void) {
+  // TODO: This should not be here, but is required for virtual memory
+  // initialization (so it really really shouldn't be here).
+  ksbrk(0x1000);
 #ifndef NO_SLAB
   for (size_t i = 0; i < ARRAY_LEN(slabs); i++) {
     slab_init(&slabs[i]);
@@ -124,9 +120,6 @@ int kmalloc_init(void) {
 void dump_backtrace(u32 max_frames);
 void *int_kmalloc(size_t s) {
   lock_acquire(&heap_lock);
-  // TODO: This should not be here, but is required for virtual memory
-  // initialization (so it really really shouldn't be here).
-  ksbrk(0x1000);
 
 #ifndef NO_SLAB
   struct slab *slab = find_slab(s);
