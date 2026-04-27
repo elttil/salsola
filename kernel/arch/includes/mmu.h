@@ -49,6 +49,7 @@ void *mmu_physical_to_virtual(void *address, bool *exists);
 void *mmu_map_frames(void *src, size_t length, u16 flags);
 void mmu_update_stack(void (*function)());
 struct mmu_directory *mmu_clone_directory(struct mmu_directory *directory);
+void mmu_free_directory(struct mmu_directory *dir);
 struct mmu_directory *mmu_get_active_directory(void);
 void mmu_set_directory(struct mmu_directory *directory);
 void mmu_unmap_frames(void *src, u64 length, bool free_frames);
@@ -65,4 +66,5 @@ void *mmu_map_frames_to_region(void *src, size_t length, void *virtual,
                                int flags);
 err_t mmu_verify_user_c_string(const char *ptr, size_t *size);
 bool mmu_check_fake_allocation(void *address, bool allocate);
+u64 mmu_num_free_frames(void);
 #endif // MMU_H

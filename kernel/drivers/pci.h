@@ -1,3 +1,4 @@
+#include <fs/vfs.h>
 #include <stdbool.h>
 #include <typedefs.h>
 
@@ -35,8 +36,9 @@ void pci_config_write32(const struct pci_device *device, u8 func, u8 offset,
 int pci_populate_device_struct(u16 vendor, u16 device,
                                struct pci_device *pci_device);
 bool pci_devices_by_id(u8 class_id, u8 subclass_id,
-                     struct pci_device *pci_device);
+                       struct pci_device *pci_device);
 
 void pci_enable_interrupts(const struct pci_device *device);
 u8 pci_get_interrupt_line(const struct pci_device *device);
 void pci_set_interrupt_line(const struct pci_device *device, u8 interrupt_line);
+struct vfs_mount *pcifs_create(void);

@@ -1,13 +1,13 @@
 #include <assert.h>
 #include <kprintf.h>
 #include <lock.h>
+#include <log.h>
 #include <math.h>
 #include <sb.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <string.h>
 #include <typedefs.h>
-#include <log.h>
 
 #define TAB_SIZE 8
 

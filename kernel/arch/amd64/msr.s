@@ -3,6 +3,8 @@
 section .text
 global cpuid
 cpuid:
+    push rbp
+	mov rbp, rsp
 	push rbx ; CPUID modifies rbx
 
 	mov rax, rdi
@@ -14,6 +16,7 @@ cpuid:
 	mov [rsi+4*3], edx
 
 	pop rbx
+    pop rbp
 	ret
 
 global msr_is_available
@@ -67,7 +70,7 @@ global tsc_get_hz
 ; So 0xFFFF is roughly 0.05492 seconds
 ; So take the result times 18 and you got your Hz
 tsc_get_hz:
-	;cli
+	cli
 	; Disable the gate for channel 2 so the clock can be set.
 	; This should only matter if the channel already has count
 	mov rdx, 0x61

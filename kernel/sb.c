@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define DEFAULT_CAPACITY 256
+#define DEFAULT_CAPACITY 16
 
 void sb_init(struct sb *ctx) {
   (void)sb_init_capacity(ctx, DEFAULT_CAPACITY);

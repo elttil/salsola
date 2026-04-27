@@ -7,14 +7,30 @@
 #include <prng.h>
 #include <stdint.h>
 #include <string.h>
+
 #define NEW_ALLOC_SIZE 0x8000
 
+#define ARRAY_LEN(a) (sizeof(a)) / (sizeof((a)[0]))
+
 lock_t heap_lock;
+
+// #define NO_SLAB
 
 // #define KMALLOC_DEBUG
 
 #define IS_FREE (1 << 0)
 #define IS_FINAL (1 << 1)
+
+// This is sqrt(SIZE_MAX+1), as s1*s2 <= SIZE_MAX
+// if both s1 < MUL_NO_OVERFLOW and s2 < MUL_NO_OVERFLOW
+#define MUL_NO_OVERFLOW ((size_t)1 << (sizeof(size_t) * 4))
+static inline bool is_multiplication_safe(size_t a, size_t b) {
+  if ((a >= MUL_NO_OVERFLOW || b >= MUL_NO_OVERFLOW) && a > 0 &&
+      SIZE_MAX / a < b) {
+    return false;
+  }
+  return true;
+}
 
 typedef struct MallocHeader {
   u64 magic;
@@ -47,6 +63,68 @@ void kmalloc_align_free(void *p, size_t s) {
   (void)s;
 }
 
+#ifndef NO_SLAB
+struct slab {
+  u64 *bitmap;
+  void *allocation;
+  size_t object_size;
+  size_t object_count;
+};
+
+#define SLAB(s) {.object_size = s}
+
+struct slab slabs[] = {
+    SLAB(16), SLAB(32), SLAB(64), SLAB(128), SLAB(160), SLAB(256),
+};
+
+void slab_init(struct slab *slab) {
+  slab->object_count = 64 * 8;
+
+  size_t s = slab->object_size * slab->object_count;
+  slab->bitmap = kcalloc(slab->object_count / 64, sizeof(u64));
+  if (!slab->bitmap) {
+    return;
+  }
+
+  slab->allocation = kmalloc(s);
+}
+
+void *slab_alloc(struct slab *slab) {
+  if (!slab->allocation) {
+    return NULL;
+  }
+  const size_t bitmap_array_length = slab->object_count / 64;
+  assert(0 == slab->object_count % 64);
+  for (size_t i = 0; i < bitmap_array_length; i++) {
+    if (~((u64)0) == slab->bitmap[i]) {
+      continue;
+    }
+
+    for (size_t offset = 0; offset < 64; offset++) {
+      if (slab->bitmap[i] & ((u64)1 << offset)) {
+        continue;
+      }
+      slab->bitmap[i] |= ((u64)1 << offset);
+      void *o = (void *)((i * 64 + offset) * slab->object_size);
+      assert((uintptr_t)o <= slab->object_count * slab->object_size);
+      void *rc = (void *)((uintptr_t)slab->allocation + (uintptr_t)o);
+      return rc;
+    }
+  }
+  // TODO: Increase the size instead.
+  return NULL;
+}
+
+struct slab *find_slab(size_t s) {
+  for (size_t i = 0; i < ARRAY_LEN(slabs); i++) {
+    if (s <= slabs[i].object_size) {
+      return &slabs[i];
+    }
+  }
+  return NULL;
+}
+#endif // NO_SLAB
+
 int kmalloc_init(void) {
   head = (MallocHeader *)ksbrk(NEW_ALLOC_SIZE);
   if (!head) {
@@ -58,6 +136,12 @@ int kmalloc_init(void) {
   head->flags = IS_FREE | IS_FINAL;
   head->n = NULL;
   final = head;
+
+#ifndef NO_SLAB
+  for (size_t i = 0; i < ARRAY_LEN(slabs); i++) {
+    slab_init(&slabs[i]);
+  }
+#endif // NO_SLAB
   return 1;
 }
 
@@ -103,12 +187,15 @@ static MallocHeader *next_header(MallocHeader *a) {
 }
 
 void kmalloc_scan(void) {
+  lock_acquire(&heap_lock);
   if (!head) {
+    lock_release(&heap_lock);
     return;
   }
   MallocHeader *p = head;
   for (; (p = next_header(p));)
     ;
+  lock_release(&heap_lock);
 }
 
 static MallocHeader *next_close_header(MallocHeader *a) {
@@ -190,8 +277,22 @@ void kfree(void *p) {
   kmalloc_align_free(p, 0x1000);
 }
 #else
+
+void dump_backtrace(u32 max_frames);
 void *int_kmalloc(size_t s) {
   lock_acquire(&heap_lock);
+
+#ifndef NO_SLAB
+  struct slab *slab = find_slab(s);
+  if (slab) {
+    void *rc = slab_alloc(slab);
+    if (rc) {
+      lock_release(&heap_lock);
+      return rc;
+    }
+  }
+#endif // NO_SLAB
+
   size_t n = s;
   MallocHeader *free_entry = find_free_entry(s);
   if (!free_entry) {
@@ -233,6 +334,27 @@ void kfree(void *p) {
   }
 
   lock_acquire(&heap_lock);
+
+#ifndef NO_SLAB
+  for (size_t i = 0; i < ARRAY_LEN(slabs); i++) {
+    if (p >= slabs[i].allocation &&
+        p <= slabs[i].allocation +
+                 slabs[i].object_size * slabs[i].object_count) {
+      size_t offset = p - slabs[i].allocation;
+      assert(0 == offset % slabs[i].object_size);
+      offset /= slabs[i].object_size;
+
+      size_t array_index = offset / 64;
+      size_t array_offset = offset % 64;
+      slabs[i].bitmap[array_index] &= ~((u64)1 << array_offset);
+
+      prng_get_pseudorandom((void *)p, slabs[i].object_size);
+      lock_release(&heap_lock);
+      return;
+    }
+  }
+#endif // NO_SLAB
+
   MallocHeader *h = (MallocHeader *)((uintptr_t)p - sizeof(MallocHeader));
   assert(h->magic == 0xdde51ab9410268b1);
   assert(!(h->flags & IS_FREE));
@@ -267,6 +389,16 @@ size_t get_mem_size(void *ptr) {
   if (!ptr) {
     return 0;
   }
+#ifndef NO_SLAB
+  for (size_t i = 0; i < ARRAY_LEN(slabs); i++) {
+    if (ptr >= slabs[i].allocation &&
+        ptr <= slabs[i].allocation +
+                   slabs[i].object_size * slabs[i].object_count) {
+      return slabs[i].object_size;
+    }
+  }
+#endif // NO_SLAB
+
   return ((MallocHeader *)((uintptr_t)ptr - sizeof(MallocHeader)))->size;
 }
 
@@ -275,12 +407,18 @@ void *krealloc(void *ptr, size_t size) {
     return kmalloc(size);
   }
   size_t l = get_mem_size(ptr);
-  if (l == size) {
-    return ptr;
-  }
-  if (l > size) {
-    MallocHeader *header = (MallocHeader *)((u8 *)ptr - sizeof(MallocHeader));
-    header->size = size;
+  /*
+    size_t l = get_mem_size(ptr);
+    if (l == size) {
+      return ptr;
+    }
+    if (l > size) {
+      MallocHeader *header = (MallocHeader *)((u8 *)ptr - sizeof(MallocHeader));
+      header->size = size;
+      return ptr;
+    }
+  */
+  if (l >= size) {
     return ptr;
   }
 
@@ -294,13 +432,8 @@ void *krealloc(void *ptr, size_t size) {
   return rc;
 }
 
-// This is sqrt(SIZE_MAX+1), as s1*s2 <= SIZE_MAX
-// if both s1 < MUL_NO_OVERFLOW and s2 < MUL_NO_OVERFLOW
-#define MUL_NO_OVERFLOW ((size_t)1 << (sizeof(size_t) * 4))
-
 void *kreallocarray(void *ptr, size_t nmemb, size_t size) {
-  if ((nmemb >= MUL_NO_OVERFLOW || size >= MUL_NO_OVERFLOW) && nmemb > 0 &&
-      SIZE_MAX / nmemb < size) {
+  if (!is_multiplication_safe(nmemb, size)) {
     return NULL;
   }
 
@@ -312,14 +445,16 @@ void *kallocarray(size_t nmemb, size_t size) {
 }
 
 void *krecalloc(void *ptr, size_t nelem, size_t elsize) {
-  if ((nelem >= MUL_NO_OVERFLOW || elsize >= MUL_NO_OVERFLOW) && nelem > 0 &&
-      SIZE_MAX / nelem < elsize) {
+  if (!is_multiplication_safe(nelem, elsize)) {
     return NULL;
   }
   if (!ptr) {
     return kcalloc(nelem, elsize);
   }
   size_t new_size = nelem * elsize;
+  if (new_size < get_mem_size(ptr)) {
+    return ptr;
+  }
   void *rc = int_kmalloc(new_size);
   if (!rc) {
     return NULL;
@@ -333,14 +468,13 @@ void *krecalloc(void *ptr, size_t nelem, size_t elsize) {
 }
 
 void *kcalloc(size_t nelem, size_t elsize) {
-  if ((nelem >= MUL_NO_OVERFLOW || elsize >= MUL_NO_OVERFLOW) && nelem > 0 &&
-      SIZE_MAX / nelem < elsize) {
+  if (!is_multiplication_safe(nelem, elsize)) {
     return NULL;
   }
   void *rc = int_kmalloc(nelem * elsize);
   if (!rc) {
     return NULL;
   }
-  memset(rc, 0, nelem * elsize);
+  memset(rc, 0, get_mem_size(rc));
   return rc;
 }

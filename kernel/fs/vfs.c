@@ -39,10 +39,20 @@ struct vfs_fd *vfs_allocate_fd(void) {
   return fd;
 }
 
-static void vfs_notify_listeners(struct vfs_fd *fd) {
+void vfs_notify_listeners(struct vfs_fd *fd) {
+  // kprintf("wait for lock\n");
   lock_acquire(&fd->listeners_lock);
+  // kprintf("END wait for lock\n");
   for (u64 i = 0;; i++) {
     struct listener *listener;
+    /* kprintf("value: %x\n", fd->listeners.items);
+     kprintf("&value: %x\n", &fd->listeners.items);
+     kprintf("i: %x\n", i);
+     kprintf("fd: %x\n", fd);
+     if (0xffffff8000fce374 == (uintptr_t)&fd->listeners.items) {
+       kprintf("test: %x\n", *(u32 *)0xffffff8000fce374);
+     }
+     kprintf("value: %x\n", fd->listeners.items[i]);*/
     if (!list_listener_get(&fd->listeners, i, &listener)) {
       break;
     }
@@ -56,8 +66,10 @@ static void vfs_notify_listeners(struct vfs_fd *fd) {
         ((KEVENT_CAN_READ & listener->flags) && fd->data.can_read);
     bool update_write =
         ((KEVENT_CAN_WRITE & listener->flags) && fd->data.can_write);
+    bool update_is_closed =
+        ((KEVENT_IS_CLOSED & listener->flags) && fd->data.is_closed);
 
-    if (!(update_read || update_write)) {
+    if (!(update_read || update_write || update_is_closed)) {
       continue;
     }
 
@@ -70,7 +82,16 @@ static void vfs_notify_listeners(struct vfs_fd *fd) {
       continue;
     }
 
+    lock_acquire(&poll->lock);
+    //     if (!lock_try(&poll->lock)) {
+    //       lock_release(&listener->lock);
+    //       continue;
+    //    }
+
     list_listener_add_or_replace_previous_null(&poll->updates, listener, NULL);
+    assert(0 != list_listener_num_entries(&poll->updates));
+
+    lock_release(&poll->lock);
 
     listener->has_sent_update = true;
 
@@ -186,6 +207,16 @@ err_t vfs_recvfd(struct vfs_fd *fd, struct vfs_fd **out) {
   return fd->recvfd(fd, out);
 }
 
+err_t vfs_sendfd(struct vfs_fd *fd, struct vfs_fd *inc) {
+  if (!fd) {
+    return ERROR_INVALID_FD;
+  }
+  if (!fd->sendfd) {
+    return ERROR_FD_HAS_NO_SENDFD;
+  }
+  return fd->sendfd(fd, inc);
+}
+
 err_t vfs_read(struct vfs_fd *fd, void *buffer, size_t length, size_t *rc) {
   size_t p;
   err_t err = vfs_pread(fd, buffer, length, fd->offset, &p);
@@ -194,6 +225,17 @@ err_t vfs_read(struct vfs_fd *fd, void *buffer, size_t length, size_t *rc) {
   }
   ASSIGN_PTR(rc, p);
   return err;
+}
+
+err_t vfs_fstat(struct vfs_fd *fd, struct stat *buf) {
+  if (!fd) {
+    return ERROR_INVALID_FD;
+  }
+  if (!fd->stat) {
+    return ERROR_FD_HAS_NO_STAT;
+  }
+  memset(buf, 0, sizeof(struct stat));
+  return fd->stat(fd, buf);
 }
 
 err_t vfs_pwrite(struct vfs_fd *fd, const void *buffer, size_t length,
@@ -259,6 +301,9 @@ err_t vfs_mmap(struct vfs_fd *fd, void *addr, size_t length, int prot,
   return fd->mmap(fd, addr, length, prot, flags, offset, out);
 }
 
+void dump_backtrace(u32 max_frames);
+// void pipe_close(struct vfs_fd *fd);
+// int n = 0;
 void vfs_close(struct vfs_fd *fd) {
   assert(0 == fd->outside_references && 0 != fd->references);
   // Check if there are existing mmaps that rely upon the vfs_fd object
@@ -275,27 +320,45 @@ void vfs_close(struct vfs_fd *fd) {
   if (fd->close) {
     fd->close(fd);
   }
+  /*
+    kprintf("fd->close: %x\n", fd->close);
+    kprintf("fd: %x\n", fd);
+    if (n > 12 && fd->close && fd->close == pipe_close) {
+      dump_backtrace(5);
+    }*/
+  //  n++;
   kfree(fd);
 }
 
 struct vfs_fd *vfs_open(struct sv file, int flags, err_t *err) {
   ASSIGN_PTR(err, ERROR_SUCCESS);
   struct vfs_fd *fd = task_find_namespace_override(file);
-  if(fd) return fd;
+  if (fd) {
+    return fd;
+  }
 
   struct vfs_mount *mount = vfs_find_mount(file);
-  assert(mount); // TODO
+  if (!mount) {
+    ASSIGN_PTR(err, ERROR_NO_FILE);
+    return NULL;
+  }
   assert(mount->open);
 
   (void)sv_take(file, &file, sv_length(mount->path));
   fd = mount->open(mount, file, flags, err);
   if (!fd) {
+    ASSIGN_PTR(err, ERROR_NO_FILE);
     return NULL;
   }
   fd->mount = mount;
   fd->flags = flags;
   if (fd->flags & O_TRUNC) {
-    assert(ERROR_SUCCESS == vfs_truncate(fd, 0));
+    err_t _err = vfs_truncate(fd, 0);
+    if (ERROR_SUCCESS != _err && ERROR_FD_HAS_NO_TRUNCATE != _err) {
+      ASSIGN_PTR(err, _err);
+      vfs_close(fd);
+      return NULL;
+    }
   }
   return fd;
 }

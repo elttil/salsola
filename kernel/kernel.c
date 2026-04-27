@@ -4,12 +4,15 @@
 #include <drivers/framebuffer.h>
 #include <drivers/pit.h>
 #include <drivers/ps2_keyboard.h>
+#include <drivers/ps2_mouse.h>
 #include <drivers/serial.h>
 #include <fcntl.h>
 #include <fs/ext2.h>
+#include <fs/ipc.h>
 #include <fs/procfs.h>
 #include <fs/ramdisk.h>
 #include <fs/ramfs.h>
+#include <fs/tmpfs.h>
 #include <fs/vfs.h>
 #include <hwrng.h>
 #include <kmalloc.h>
@@ -25,8 +28,11 @@
 #include <task.h>
 #include <timer.h>
 
+#include <drivers/pci.h>
+
 #include <arch/amd64/apic.h>
 #include <arch/amd64/gdt.h>
+#include <arch/amd64/hpet.h>
 #include <arch/amd64/idt.h>
 #include <arch/amd64/msr.h>
 #include <arch/amd64/smp.h>
@@ -89,11 +95,12 @@ void kmain2(void) {
       display_driver_init((struct multiboot_tag_framebuffer_common *)tag);
     }
   }
+  interrupts_disable();
   log_enable_screen();
   klog(LOG_NOTE, "Log start");
 
   klog(LOG_NOTE, "Trying to initialize time");
-  timer_init();
+  timer_init(tags);
 
   klog(LOG_SUCCESS, "Timer Initialized");
 
@@ -124,6 +131,7 @@ void kmain2(void) {
   }
 
   interrupts_disable();
+
   smp_init(tags);
   klog(LOG_SUCCESS, "SMP Initialized");
 
@@ -135,6 +143,9 @@ void kmain2(void) {
 
   assert(vfs_add_mount(C_TO_SV("/dev"), ramfs_create()));
   klog(LOG_SUCCESS, "/dev/ Created");
+
+  assert(vfs_add_mount(C_TO_SV("/ipc"), ipcfs_create()));
+  klog(LOG_SUCCESS, "/ipc/ Created");
 
   ahci_init();
   klog(LOG_SUCCESS, "AHCI Initialized");
@@ -149,15 +160,18 @@ void kmain2(void) {
 
   assert(vfs_add_mount(C_TO_SV("/"), ext2_create(root_disk)));
   assert(vfs_add_mount(C_TO_SV("/proc/"), procfs_create()));
+  assert(vfs_add_mount(C_TO_SV("/dev/pci/"), pcifs_create()));
 
   assert(csprng_add_random_device(C_TO_SV("/dev/random")));
   assert(csprng_add_random_device(C_TO_SV("/dev/urandom")));
+  assert(tmpfs_add_device(C_TO_SV("/dev/tmp")));
   timer_add_device(C_TO_SV("/dev/clock"));
 
   framebuffer_add_device(C_TO_SV("/dev/window"));
 
   kpoll_add_device();
 
+  assert(ps2_mouse_init());
   assert(ps2_keyboard_init());
 
   setup_gs();
@@ -166,23 +180,29 @@ void kmain2(void) {
   apic_timer_install();
 
   kprintf("Kernel star time until /init: %dms\n", timer_get_ms());
+
+  log_disable_screen();
+
   u64 pid;
   assert(ERROR_SUCCESS == task_fork(&pid));
   if (0 == pid) {
+    u64 fd;
+    err_t err = task_fd_open(&fd, C_TO_SV("/dev/serial"), O_WRITE);
+    if (ERROR_SUCCESS == err) {
+      UNUSED(task_fd_dup2(fd, 1));
+      UNUSED(task_fd_dup2(fd, 2));
+      if (1 != fd && 2 != fd) {
+        UNUSED(task_fd_close(fd));
+      }
+    }
+
     struct sv args[1];
     args[0] = C_TO_SV("/bin/init");
-    UNUSED(task_exec(C_TO_SV("/bin/init"), args, 1));
-    kprintf("After exec\n");
-    for (;;)
-      ;
-    // task_exec(C_TO_SV("/bin/font"));
+    UNUSED(task_exec(C_TO_SV("/bin/init"), args, 1, NULL, 0));
     assert(0);
   }
   for (;;) {
-    __asm__("sti");
-    __asm__("hlt");
-    __asm__("cli");
-    task_legacy_switch();
+    task_msleep(1000 * 1000);
   }
 }
 

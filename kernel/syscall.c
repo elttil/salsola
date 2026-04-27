@@ -11,6 +11,8 @@
 #include <syscalls.h>
 #include <task.h>
 
+#include <kprintf.h>
+
 struct syscall_arguments {
   uint64_t rbx;
   uint64_t rcx;
@@ -136,10 +138,7 @@ err_t syscall_mmap(void *addr, size_t length, int prot, int flags, int fd,
 }
 
 err_t syscall_fstat(u64 fd, struct stat *buf) {
-  // TODO:
-  (void)fd;
-  (void)buf;
-  return ERROR_SUCCESS;
+  return task_fd_fstat(fd, buf);
 }
 
 err_t syscall_fork(pid_t *pid) {
@@ -163,9 +162,9 @@ err_t syscall_pipe(u64 fds[2]) {
 }
 
 err_t syscall_kpoll(u64 fd, struct kevent *events, size_t nevents,
-                    size_t *nchanges) {
+                    size_t *nchanges, i32 timeout) {
   // TODO: DOES NOT CORRECTLY CHECK POINTERS.
-  return kpoll(fd, events, nevents, nchanges);
+  return kpoll(fd, events, nevents, nchanges, timeout);
 }
 
 void syscall_exit(u8 exit_code) {
@@ -221,8 +220,27 @@ void syscall_msleep(u64 ms) {
   return task_msleep(ms);
 }
 
+void *syscall_get_physical(void *address) {
+  // TODO: Proper checks
+  if ((uintptr_t)address >= 0xF000000000) {
+    kprintf("too big\n");
+    return NULL;
+  }
+  bool exists;
+  void *rc = mmu_virtual_to_physical(address, &exists);
+  if (!exists) {
+    kprintf("does not exist??\n");
+    return NULL;
+  }
+  return rc;
+}
+
 err_t syscall_recvfd(fd_t fd, fd_t *out_fd) {
   return task_fd_recvfd(fd, out_fd);
+}
+
+err_t syscall_sendfd(fd_t fd, fd_t inc_fd) {
+  return task_fd_sendfd(fd, inc_fd);
 }
 
 u64 syscall_handler(const struct syscall_arguments *regs) {
@@ -260,7 +278,8 @@ u64 syscall_handler(const struct syscall_arguments *regs) {
   case SYS_PIPE:
     return syscall_pipe((void *)args[0]);
   case SYS_KPOLL:
-    return syscall_kpoll(args[0], (void *)args[1], args[2], (void *)args[3]);
+    return syscall_kpoll(args[0], (void *)args[1], args[2], (void *)args[3],
+                         args[4]);
   case SYS_WAITFD:
     return syscall_waitfd(args[0], (void *)args[1], (void *)args[2]);
   case SYS_GETCWD:
@@ -286,6 +305,9 @@ u64 syscall_handler(const struct syscall_arguments *regs) {
   case SYS_MSLEEP:
     syscall_msleep(args[0]);
     break;
+  case SYS_GET_PHYSICAL:
+    return (u64)syscall_get_physical((void *)args[0]);
+    break;
   case SYS_PREAD:
     return syscall_pread(args[0], (void *)args[1], args[2], args[3],
                          (u64 *)args[4]);
@@ -294,6 +316,8 @@ u64 syscall_handler(const struct syscall_arguments *regs) {
                           (u64 *)args[4]);
   case SYS_RECVFD:
     return syscall_recvfd(args[0], (void *)args[1]);
+  case SYS_SENDFD:
+    return syscall_sendfd(args[0], args[1]);
   default:
     assert(0);
     break;

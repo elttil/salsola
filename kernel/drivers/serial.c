@@ -3,6 +3,7 @@
 #include <fs/ramfs.h>
 #include <fs/vfs.h>
 #include <io.h>
+#include <kprintf.h>
 #include <stddef.h>
 #include <sv.h>
 
@@ -53,6 +54,7 @@ err_t serial_write(struct vfs_fd *fd, const void *buffer, size_t length,
   (void)buffer;
   (void)length;
   (void)offset;
+  //  kprintf("%.s",buffer, length);
   serial_print_string(buffer, length);
   ASSIGN_PTR(rc, length);
   return ERROR_SUCCESS;

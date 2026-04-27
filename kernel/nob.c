@@ -15,6 +15,7 @@ char *asm_files[] = {
 char *c_files[] = {
     "fs/ramdisk.c",
     "fs/procfs.c",
+    "fs/tmpfs.c",
     "fs/ipc.c",
     "kpoll.c",
     "timer.c",
@@ -33,6 +34,7 @@ char *c_files[] = {
     "prng.c",
     "arch/amd64/idt.c",
     "drivers/ps2_keyboard.c",
+    "drivers/ps2_mouse.c",
     "drivers/framebuffer.c",
     "ringbuffer.c",
     "drivers/pci.c",
@@ -48,6 +50,8 @@ char *c_files[] = {
     "fs/ramfs.c",
     "arch/amd64/apic.c",
     "arch/amd64/smp.c",
+    "arch/amd64/acpi.c",
+    "arch/amd64/hpet.c",
     "fs/ext2.c",
     "elf.c",
     "ubsan.c",
@@ -62,9 +66,14 @@ char *c_files[] = {
 #define ARRAY_LEN(array) ((sizeof(array)) / (sizeof(array[0])))
 
 #define USES_GCC 1
+
+#ifdef USES_GCC
 #define CC "x86_64-salsola-gcc"
-// #define CC "cproc"
 #define AS "nasm"
+#else // USES_GCC
+#define CC "cproc"
+#define AS "nasm"
+#endif // USES_GCC
 
 #define TARGET "salsola"
 
@@ -148,6 +157,10 @@ int build_c_file(char *file, char *object_output, Nob_Procs *procs,
   Nob_Cmd cmd = {0};
   nob_cmd_append(&cmd, CC, "-o", object_output, "-c", file);
   nob_da_append_many(&cmd, c_flags, ARRAY_LEN(c_flags));
+
+  if (flag_ramdisk_iso) { // FIXME: Not really the correct flag.
+    nob_cmd_append(&cmd, "-DREALHARDWARE_WORKAROUND");
+  }
 #if USES_GCC
   nob_da_append_many(&cmd, gcc_flags, ARRAY_LEN(gcc_flags));
 #endif // USES_GCC

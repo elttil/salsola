@@ -10,6 +10,7 @@
 #include <log.h>
 #include <stdbool.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 
 #define FS_TYPE_FILE 0
@@ -710,7 +711,26 @@ err_t ext2_read(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
   return ERROR_SUCCESS;
 }
 
+u64 get_inode_size(struct ext2_ctx *ctx, u32 inode_num) {
+  inode_t inode;
+  get_inode_header(ctx, inode_num, &inode);
+  u64 fsize = (u64)(((u64)inode._upper_32size << 32) | (u64)inode.low_32size);
+  return fsize;
+}
+
+err_t ext2_stat(struct vfs_fd *fd, struct stat *buf) {
+  struct ext2_ctx *ctx = (struct ext2_ctx *)fd->mount->internal_object;
+  u32 inode_num = (u32)fd->internal_object;
+
+  // TODO: Add more stat
+  buf->st_size = get_inode_size(ctx, inode_num);
+  return ERROR_SUCCESS;
+}
+
 err_t ext2_lseek(struct vfs_fd *fd, off_t offset, int whence, off_t *out) {
+  struct ext2_ctx *ctx = (struct ext2_ctx *)fd->mount->internal_object;
+  u32 inode_num = (u32)fd->internal_object;
+
   off_t ret_offset = fd->offset;
   switch (whence) {
   case SEEK_SET:
@@ -720,8 +740,7 @@ err_t ext2_lseek(struct vfs_fd *fd, off_t offset, int whence, off_t *out) {
     ret_offset += offset;
     break;
   case SEEK_END:
-    // TODO: Get file size and put that.
-    return ERROR_INVALID_WHENCE;
+    ret_offset = get_inode_size(ctx, inode_num);
     break;
   default:
     return ERROR_INVALID_WHENCE;
@@ -769,6 +788,7 @@ struct vfs_fd *ext2_open(struct vfs_mount *mount, struct sv file, int flags,
   fd->getdent = ext2_getdent;
   fd->lseek = ext2_lseek;
   fd->truncate = ext2_truncate;
+  fd->stat = ext2_stat;
   if (FS_TYPE_FILE == type) {
     fd->type = VFS_TYPE_FILE;
   } else if (FS_TYPE_DIRECTORY == type) {
@@ -803,13 +823,12 @@ static err_t parse_superblock(struct ext2_ctx *ctx) {
 }
 
 struct vfs_mount *ext2_create(struct vfs_fd *fd) {
-  struct vfs_mount *mount;
-  err_t err = kmalloc2((void **)&mount, sizeof(struct vfs_mount));
-  if (ERROR_SUCCESS != err) {
+  struct vfs_mount *mount = kcalloc(1, sizeof(struct vfs_mount));
+  if (!mount) {
     return NULL;
   }
   struct ext2_ctx *ctx;
-  err = kmalloc2((void **)&ctx, sizeof(struct ext2_ctx));
+  err_t err = kmalloc2((void **)&ctx, sizeof(struct ext2_ctx));
   if (ERROR_SUCCESS != err) {
     kfree(mount);
     return NULL;

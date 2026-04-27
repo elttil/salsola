@@ -115,11 +115,8 @@ void set_idt_entry(u8 vector, void *handler, u8 dpl) {
   entry->address_low = handler_addr & 0xFFFF;
   entry->address_mid = (handler_addr >> 16) & 0xFFFF;
   entry->address_high = handler_addr >> 32;
-  // your code selector may be different!
   entry->selector = 0x8;
-  // trap gate + present + DPL
   entry->flags = 0b1110 | ((dpl & 0b11) << 5) | (1 << 7);
-  // ist disabled
   entry->ist = 0;
 }
 
@@ -191,6 +188,7 @@ void interrupt_dispatch(struct cpu_status *r) {
   }
 
   handler(r);
+  r->iret_flags |= (1 << 9);
 }
 
 struct stackframe {
@@ -245,6 +243,17 @@ void page_fault(struct cpu_status *r) {
   kprintf("reserved: %d\n", reserved);
   kprintf("instruction_fetch: %d\n", instruction_fetch);
   kprintf("protection_key: %d\n", protection_key);
+  kprintf("rsp: %x\n", r->iret_rsp);
+
+  kprintf("Instructions at IP(%x):\n", r->iret_rip);
+  u8 *p = (u8 *)r->iret_rip;
+  for (size_t i = 0; i < 0x20; i++) {
+    kprintf("%02x ", p[i]);
+  }
+  kprintf("\n");
+
+  kprintf("CR3: %x\n", mmu_get_active_directory()->physical);
+
   dump_backtrace(12);
   lock_release(&lock_fault);
   for (;;)
@@ -275,15 +284,81 @@ void opcode_fault(struct cpu_status *r) {
     ;
 }
 
+void div_fault(struct cpu_status *r) {
+  log_enable_screen();
+  lock_acquire(&lock_fault);
+  (void)r;
+  kprintf("Division by zero\n");
+  kprintf("Processor: %d\n", core_id_get());
+  kprintf("IP: %x\n", r->iret_rip);
+  kprintf("CS: %x\n", r->iret_cs);
+  kprintf("SS: %x\n", r->iret_ss);
+  kprintf("RSP: %x\n", r->iret_rsp);
+  kprintf("Error code: %x\n", r->error_code);
+  struct task *task = get_current_task();
+  if (task) {
+    kprintf("Process: " SV_FMT "\n", SV_FMT_ARG(task->program_name));
+  } else {
+    kprintf("No task\n");
+  }
+  dump_backtrace(12);
+  lock_release(&lock_fault);
+  for (;;)
+    ;
+}
+
+void ac_fault(struct cpu_status *r) {
+  log_enable_screen();
+  lock_acquire(&lock_fault);
+  (void)r;
+  kprintf("Alignment Check\n");
+  kprintf("Processor: %d\n", core_id_get());
+  kprintf("IP: %x\n", r->iret_rip);
+  kprintf("CS: %x\n", r->iret_cs);
+  kprintf("SS: %x\n", r->iret_ss);
+  kprintf("RSP: %x\n", r->iret_rsp);
+  kprintf("Error code: %x\n", r->error_code);
+  struct task *task = get_current_task();
+  if (task) {
+    kprintf("Process: " SV_FMT "\n", SV_FMT_ARG(task->program_name));
+  } else {
+    kprintf("No task\n");
+  }
+  dump_backtrace(12);
+  lock_release(&lock_fault);
+  for (;;)
+    ;
+}
+
 void gpt_fault(struct cpu_status *r) {
   log_enable_screen();
   lock_acquire(&lock_fault);
   (void)r;
   kprintf("General Protection Fault\n");
   kprintf("Processor: %d\n", core_id_get());
+  kprintf("Vec: %x\n", r->vector_number);
   kprintf("IP: %x\n", r->iret_rip);
   kprintf("CS: %x\n", r->iret_cs);
+  kprintf("SS: %x\n", r->iret_ss);
+  kprintf("RSP: %x\n", r->iret_rsp);
   kprintf("Error code: %x\n", r->error_code);
+
+  kprintf("r12: %x\n", r->r12);
+  kprintf("rax: %x\n", r->rax);
+
+  u8 e = r->error_code & 0x1;
+  u8 tbl = (r->error_code >> 1) & 0x3;
+  u16 index = (r->error_code >> 3) & 0x1fff;
+  kprintf("e: 0x%x\n", e);
+  kprintf("tbl: 0x%x\n", tbl);
+  kprintf("index: 0x%x\n", index);
+
+  if (e) {
+    log_disable_screen();
+    lock_release(&lock_fault);
+    return;
+  }
+
   struct task *task = get_current_task();
   if (task) {
     kprintf("Process: " SV_FMT "\n", SV_FMT_ARG(task->program_name));
@@ -311,6 +386,11 @@ void handler_install(uint8_t num, interrupt_handler handler, int dpl) {
 
 bool idt_has_init = false;
 
+void strange_fault(struct cpu_status *r) {
+  (void)r;
+  eoi(0x2f);
+}
+
 void idt_init(void) {
   lock_release(&lock_fault);
   pic_remap(0x20);
@@ -322,9 +402,12 @@ void idt_init(void) {
       irq_set_mask(i);
     }
 
+    handler_install(0x2f, strange_fault, 0);
+    handler_install(0x00, div_fault, 0);
     handler_install(0x0E, page_fault, 0);
     handler_install(0x0D, gpt_fault, 0);
     handler_install(0x06, opcode_fault, 0);
+    handler_install(0x11, ac_fault, 0);
 
     //    interrupts_enable();
   }

@@ -4,19 +4,17 @@
 #include <fcntl.h>
 #include <fs/vfs.h>
 #include <mmu.h>
+#include <prng.h>
 #include <typedefs.h>
 
-err_t elf_open(struct sv file, struct vfs_fd **fd) {
+#include <kprintf.h>
+
+err_t elf_parse(struct vfs_fd *fd) {
   err_t err;
   Elf64_Ehdr header;
-  //  ELFHeader header;
-  struct vfs_fd *_fd = vfs_open(file, O_RDONLY, NULL);
-  if (!_fd) {
-    return ERROR_NO_FILE;
-  }
 
   size_t rc;
-  TRY_COND(vfs_pread(_fd, &header, sizeof(header), 0, &rc), err, cleanup);
+  TRY_COND(vfs_pread(fd, &header, sizeof(header), 0, &rc), err, cleanup);
   if (sizeof(header) != rc) {
     err = ERROR_INVALID_ELF_HEADER;
     goto cleanup;
@@ -26,10 +24,8 @@ err_t elf_open(struct sv file, struct vfs_fd **fd) {
     err = ERROR_INVALID_ELF_HEADER;
     goto cleanup;
   }
-  ASSIGN_PTR(fd, _fd);
   return ERROR_SUCCESS;
 cleanup:
-  vfs_close(_fd);
   return err;
 }
 

@@ -460,5 +460,5 @@ interrupt_stub:
 	pop r15
 
 	add rsp, 16
-	sti
+	;sti
 	iretq

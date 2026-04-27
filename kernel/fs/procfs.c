@@ -87,11 +87,14 @@ struct vfs_fd *procfs_open(struct vfs_mount *mount, struct sv file, int flags,
     u64 pid;
     int got_num;
     pid = sv_parse_unsigned_number(dir, &dir, &got_num);
+    kprintf("pid: %d\n", pid);
     if (!got_num) {
+      kprintf("DID NOT GET NUM\n");
       ASSIGN_PTR(err, ERROR_NO_FILE);
       return NULL;
     }
     if (ERROR_SUCCESS != task_get_from_pid(pid, &task)) {
+      kprintf("COULD NOT FIND TASK\n");
       ASSIGN_PTR(err, ERROR_NO_FILE);
       return NULL;
     }

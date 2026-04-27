@@ -12,6 +12,8 @@
 #include <task.h>
 #include <timer.h>
 
+#include <kprintf.h>
+
 DEFINE_LIST_FUNCTIONS(list_fd, struct vfs_fd *);
 DEFINE_LIST_FUNCTIONS(list_memory, struct memory_mapping *);
 
@@ -50,6 +52,7 @@ void task_delete_maps(struct task *task) {
     list_memory_remove(maps, j);
   }
 
+  //  ffffff8000f34f68
   mmu_unmap_frames(0, 0xF000000000, true);
 }
 
@@ -79,6 +82,7 @@ bool task_init(void) {
   task_head->is_dead = false;
   task_head->namespace = NULL;
   task_head->sleep_until = 0;
+  task_head->last_used = timer_get_us();
 
   lock_release(&task_head->cwd_lock);
   sb_init(&task_head->cwd);
@@ -139,7 +143,7 @@ err_t task_fd_dup2(u64 oldfd, u64 newfd) {
 
 err_t task_fd_pipe(u64 fd[2]) {
   struct vfs_fd *fds[2];
-  TRY(pipe(fds));
+  TRY(pipe(fds, 4096 * 8));
 
   if (!list_fd_add(&get_current_task()->fds, fds[0], &fd[0])) {
     vfs_close(fds[0]);
@@ -258,6 +262,15 @@ err_t task_getcwd(char *buffer, size_t size) {
   return ERROR_SUCCESS;
 }
 
+err_t task_fd_sendfd(u64 fd, u64 inc_fd) {
+  struct vfs_fd *fd_ptr;
+  struct vfs_fd *inc_ptr;
+  GET_FD(fd, &fd_ptr);
+  GET_FD(inc_fd, &inc_ptr);
+
+  return vfs_sendfd(fd_ptr, inc_ptr);
+}
+
 err_t task_fd_recvfd(u64 fd, u64 *out_fd) {
   struct task *task = get_current_task();
 
@@ -303,6 +316,12 @@ err_t task_fd_getdent(u64 fd, struct vfs_dirent *dirp, size_t dir_entry_size,
   struct vfs_fd *fd_ptr;
   GET_FD(fd, &fd_ptr);
   return vfs_getdent(fd_ptr, dirp, dir_entry_size, nentries, rc);
+}
+
+err_t task_fd_fstat(u64 fd, struct stat *buf) {
+  struct vfs_fd *fd_ptr;
+  GET_FD(fd, &fd_ptr);
+  return vfs_fstat(fd_ptr, buf);
 }
 
 err_t task_fd_read(u64 fd, void *buffer, u64 count, u64 *out) {
@@ -379,6 +398,8 @@ err_t task_waitfd(int fd, u8 *exit_code, pid_t *pid) {
   ASSIGN_PTR(pid, child->pid);
 
   // TODO: Actually kill and gut the child.
+
+  // Remove the task from the list
   if (task_head == child) {
     task_head = child->next;
   }
@@ -395,6 +416,8 @@ err_t task_waitfd(int fd, u8 *exit_code, pid_t *pid) {
   }
 
   child->next = NULL;
+
+  mmu_free_directory(child->directory);
 
   return ERROR_SUCCESS;
 }
@@ -465,6 +488,20 @@ void task_exit(u8 exit_code) {
     vfs_close(fd);
   }
 
+  list_fd_free(&task->fds);
+  list_memory_free(&task->mappings);
+
+  struct namespace_override *h = task->namespace;
+  for (; h;) {
+    struct namespace_override *p = h;
+    h = p->next;
+
+    vfs_close(p->fd);
+    kfree((void *)sv_buffer(p->path));
+    kfree(p);
+  }
+  task->namespace = NULL;
+
   task_switch(new_task);
 }
 
@@ -508,6 +545,7 @@ void jump_usermode(void(*ring3_function), void *stack);
 WARN_UNUSED static err_t allocate(struct memory_mapping *map, void *addr,
                                   size_t length, int prot, int flags, int fd,
                                   off_t offset, void **out) {
+  // TODO: Add a flag that allows for linear physical mapping
   map->flags = flags;
   // TODO: Handle prot
   (void)prot;
@@ -524,6 +562,10 @@ WARN_UNUSED static err_t allocate(struct memory_mapping *map, void *addr,
     TRY(mmu_setup_random_region(
         addr, length, true, true,
         MMU_FLAG_RW | MMU_FLAG_USER | MMU_FLAG_FAKE_ALLOCATION, &ptr));
+    volatile char *p = (volatile char *)ptr;
+    for (size_t i = 0; i < length; i++) {
+      *p = 0;
+    }
     map->fd = NULL;
     map->address = ptr;
     map->length = length;
@@ -682,10 +724,69 @@ WARN_UNUSED static err_t setup_stack(void **out, u64 stack_length,
   return ERROR_SUCCESS;
 }
 
+err_t exec_shebang(struct vfs_fd *fd, struct sv *args, u32 num_of_args,
+                   struct sv *envs, u32 num_of_envs) {
+  char _program[512];
+  size_t rc;
+  TRY(vfs_pread(fd, _program, sizeof(_program), 0, &rc));
+
+  struct sv program = sv_init(_program, rc);
+  assert(sv_try_eat(program, &program, C_TO_SV("#!")));
+  program = sv_split_delim(program, NULL, '\n');
+
+  bool first = true;
+
+  u32 num_new_args = 0;
+  struct sv *new_args = NULL;
+  struct sv p = program;
+  for (;;) {
+    p = sv_skip_chars(p, " \t");
+    if (sv_isempty(p)) {
+      break;
+    }
+    struct sv t = sv_split_delim(p, &p, ' ');
+
+    if (first) {
+      first = false;
+      program = t;
+    }
+
+    new_args = kreallocarray(new_args, num_new_args + 1, sizeof(struct sv));
+    assert(new_args);
+    new_args[num_new_args] = t;
+    num_new_args++;
+  }
+
+  new_args =
+      kreallocarray(new_args, num_new_args + num_of_args, sizeof(struct sv));
+  assert(new_args);
+  memcpy(&new_args[num_new_args], args, num_of_args * sizeof(struct sv));
+  num_new_args += num_of_args;
+
+  return task_exec(program, new_args, num_new_args, envs, num_of_envs);
+}
+
 err_t task_exec(struct sv file, struct sv *args, u32 num_of_args,
                 struct sv *envs, u32 num_of_envs) {
-  struct vfs_fd *fd;
-  TRY(elf_open(file, &fd));
+  struct vfs_fd *fd = vfs_open(file, O_RDONLY, NULL);
+  if (!fd) {
+    return ERROR_NO_FILE;
+  }
+  err_t _err;
+
+  char shebang[2];
+  size_t rc;
+  TRY_COND(vfs_pread(fd, shebang, sizeof(shebang), 0, &rc), _err,
+           task_exec_exit);
+  if (sizeof(shebang) != rc) {
+    return ERROR_EXHAUSTED; // TODO: Maybe use a different error?
+  }
+  if (0 == memcmp(shebang, "#!", 2)) {
+    TRY_COND(exec_shebang(fd, args, num_of_args, envs, num_of_envs), _err,
+             task_exec_exit);
+    return ERROR_SUCCESS;
+  }
+  TRY_COND(elf_parse(fd), _err, task_exec_exit);
 
   struct task *task = get_current_task();
   task_delete_maps(task);
@@ -696,6 +797,7 @@ err_t task_exec(struct sv file, struct sv *args, u32 num_of_args,
   void *entry;
   err_t err = elf_load_file(fd, &program_end, &entry);
   if (ERROR_SUCCESS != err) {
+    vfs_close(fd);
     // FIXME: What do we do here?
     assert(0);
   }
@@ -710,6 +812,9 @@ err_t task_exec(struct sv file, struct sv *args, u32 num_of_args,
   jump_usermode(entry, (void *)stack_ptr);
   assert(0);
   return ERROR_SUCCESS;
+task_exec_exit:
+  vfs_close(fd);
+  return _err;
 }
 
 struct vfs_fd *task_find_namespace_override(struct sv path) {
@@ -766,14 +871,14 @@ err_t task_fork(u64 *pid) {
   task->in_use = false;
   task->parent = parent;
   task->children = NULL;
-  task->program_name = sv_clone(parent->program_name);
   task->is_dead = false;
   task->sleep_until = 0;
+  task->last_used = timer_get_us();
 
   task->namespace = NULL;
   struct namespace_override *o = parent->namespace;
-  for(;o;o = o->next) {
-	add_namespace_override(task, o->path, o->fd);
+  for (; o; o = o->next) {
+    add_namespace_override(task, o->path, o->fd);
   }
 
   lock_acquire(&parent->cwd_lock);
@@ -791,6 +896,7 @@ err_t task_fork(u64 *pid) {
   active_pid++;
   list_fd_clone(&task->fds, &parent->fds);
   list_memory_clone(&task->mappings, &parent->mappings);
+
   // TODO: Have a separate function for this
   for (u64 i = 0; i < task->mappings.length; i++) {
     struct memory_mapping *map;
@@ -800,6 +906,7 @@ err_t task_fork(u64 *pid) {
     }
     map->refs++;
   }
+
   for (u64 i = 0; i < task->fds.length; i++) {
     struct vfs_fd *fd;
     assert(list_fd_get(&task->fds, i, &fd));
@@ -841,7 +948,9 @@ void task_switch(struct task *task) {
   rwlock_write_acquire(&task_list_lock);
   if (old) {
     old->in_use = false;
+    old->last_used = timer_get_us();
   }
+  task->last_used = timer_get_us();
   switch_to_task(old, task);
   rwlock_write_release(&task_list_lock);
 }
@@ -854,15 +963,20 @@ WARN_UNUSED static struct task *task_next(struct task *task) {
   return task;
 }
 
-WARN_UNUSED static bool is_halted(struct task *task) {
+WARN_UNUSED static bool is_halted(struct task *task, u64 current_time) {
   struct kpoll *kpoll = task->active_kpoll;
   if (kpoll) {
+    __asm__("cli");
     lock_acquire(&kpoll->lock);
-    if (0 == list_listener_num_entries(&kpoll->updates)) {
-      lock_release(&kpoll->lock);
-      return true;
+    if (!(kpoll->has_timeout && current_time >= kpoll->timeout)) {
+      if (0 == list_listener_num_entries(&kpoll->updates)) {
+        lock_release(&kpoll->lock);
+        __asm__("sti");
+        return true;
+      }
     }
     lock_release(&kpoll->lock);
+    __asm__("sti");
   }
   if (task->wait.fd) {
     struct vfs_fd *fd = task->wait.fd;
@@ -903,10 +1017,31 @@ void task_legacy_switch(void) {
   u64 current_time = timer_get_ms();
 
   struct task *new_task = get_current_task();
+  struct task *s = NULL;
+  size_t n = 0;
+  size_t l = 0;
   for (size_t i = 0;;) {
     new_task = task_next(new_task);
 
-    if (new_task->is_dead) {
+    if (new_task == get_current_task()) {
+      if (s) {
+        break;
+      }
+      current_time = timer_get_ms();
+      i++;
+      l++;
+      if (l > 20) {
+        break;
+      }
+    }
+
+    if (i > 10) {
+      i = 0;
+      new_task = get_current_task();
+      rwlock_read_release(&task_list_lock);
+      __asm__("sti");
+      __asm__("hlt");
+      rwlock_read_acquire(&task_list_lock);
       continue;
     }
 
@@ -914,26 +1049,25 @@ void task_legacy_switch(void) {
       continue;
     }
 
-    if (new_task == get_current_task()) {
-      current_time = timer_get_ms();
-      if (i < 10) {
-        i++;
-        continue;
-      }
-      break;
-    }
-
-    if (0 == new_task->pid) {
+    if (new_task->is_dead) {
       continue;
     }
-
     if (new_task->in_use) {
       continue;
     }
-    if (is_halted(new_task)) {
+
+    if (is_halted(new_task, current_time) && !(n > 8)) {
+      n++;
       continue;
     }
-    break;
+
+    if (!s || s->last_used > new_task->last_used) {
+      s = new_task;
+    }
+  }
+  new_task = s;
+  if (!new_task) {
+    new_task = get_current_task();
   }
 
   if (new_task == get_current_task()) {

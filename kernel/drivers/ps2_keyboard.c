@@ -9,6 +9,8 @@
 #include <sv.h>
 #include <task.h>
 
+#include <kprintf.h>
+
 #define PS2_REG_DATA 0x60
 #define PS2_REG_STATUS 0x64
 #define PS2_REG_COMMAND 0x64
@@ -96,7 +98,7 @@ u8 capital_ascii_table[] = {
     ' ', // ;
 };
 
-struct ringbuffer keyboard_buffer;
+static struct ringbuffer keyboard_buffer;
 
 u8 keyboard_to_ascii(u16 key, u8 capital) {
   if ((key & 0xFF) > sizeof(ascii_table)) {
@@ -109,13 +111,22 @@ u8 keyboard_to_ascii(u16 key, u8 capital) {
   }
 }
 
-struct list_fd_ctx listeners;
+static struct list_fd_ctx listeners;
 
 void keyboard_handler(struct cpu_status *r) {
+  __asm__("cli");
   (void)r;
 
   u16 c = inb(PS2_REG_DATA);
-  outb(0x20, 0x20);
+  bool key_set = true;
+  switch (c & 0xFF) {
+  case 0x2A:
+  case 0x36:
+  case 0x38:
+  case 0x1D:
+    key_set = false;
+    break;
+  }
 
   int released = 0;
   if (c & 0x80) {
@@ -123,13 +134,13 @@ void keyboard_handler(struct cpu_status *r) {
     case 0x2A: // Left shift
     case 0x36: // Right shift
       is_shift_down = false;
-      return;
+      break;
     case 0x38:
       is_alt_down = false;
-      return;
+      break;
     case 0x1D:
       is_ctrl_down = false;
-      return;
+      break;
     }
     released = 1;
   } else {
@@ -137,13 +148,13 @@ void keyboard_handler(struct cpu_status *r) {
     case 0x2A: // Left shift
     case 0x36: // Right shift
       is_shift_down = true;
-      return;
+      break;
     case 0x38:
       is_alt_down = true;
-      return;
+      break;
     case 0x1D:
       is_ctrl_down = true;
-      return;
+      break;
     }
     released = 0;
   }
@@ -156,6 +167,7 @@ void keyboard_handler(struct cpu_status *r) {
   ev.mode |= is_shift_down << 0;
   ev.mode |= is_alt_down << 1;
   ev.mode |= is_ctrl_down << 2;
+  ev.mode |= key_set << 3;
   ringbuffer_write(&keyboard_buffer, (u8 *)&ev, sizeof(ev));
   bool has_data = (0 != ringbuffer_used(&keyboard_buffer));
   for (u64 i = 0; i < listeners.length; i++) {
@@ -166,6 +178,7 @@ void keyboard_handler(struct cpu_status *r) {
     }
     vfs_notify_can_read(fd, has_data);
   }
+  eoi(1);
 }
 
 err_t keyboard_read(struct vfs_fd *fd, void *buffer, size_t length,
@@ -241,6 +254,15 @@ static u8 ps2_command_call(u8 command) {
   return inb(PS2_REG_DATA);
 }
 
+static u8 ps2_mouse_call_arg(u8 command) {
+  ps2_wait_for_write();
+  outb(PS2_REG_COMMAND, 0xD4);
+  ps2_wait_for_write();
+  outb(PS2_REG_DATA, command);
+  ps2_wait_for_read();
+  return inb(PS2_REG_DATA);
+}
+
 void ps2_disable_ports() {
   ps2_command(0xAD);
   ps2_command(0xA7);
@@ -298,7 +320,8 @@ bool ps2_keyboard_init(void) {
 
   result = ps2_command_call(0xAA);
   if (0x55 != result) {
-    klog(LOG_ERROR, "PS2: Self test failed. Expected: 0x55, Got: %02x\n", result);
+    klog(LOG_ERROR, "PS2: Self test failed. Expected: 0x55, Got: %02x\n",
+         result);
     return false;
   }
 
@@ -308,7 +331,6 @@ bool ps2_keyboard_init(void) {
   config = read_config();
   is_dual_channel = !(config & (1 << 5));
   if (is_dual_channel) {
-    ps2_command(0xA7);
     config &= ~(1 << 1);
     config &= ~(1 << 5);
     write_config(config);
@@ -325,10 +347,26 @@ bool ps2_keyboard_init(void) {
     return false;
   }
 
+  // Set default configuration for mouse
+  if (0xFA != (result = ps2_mouse_call_arg(0xF6))) {
+    klog(LOG_ERROR,
+         "PS2 Mouse: Set default values failed. Expected: 0xFA, Got: %02x\n",
+         result);
+    //    return false;
+  }
+  // Enable mouse
+  if (0xFA != (result = ps2_mouse_call_arg(0xF4))) {
+    klog(LOG_ERROR, "PS2 Mouse: Enable failed. Expected: 0xFA, Got: %02x\n",
+         result);
+    //    return false;
+  }
+
   ps2_enable_ports();
 
   config = read_config();
   config |= (1 << 0) | (1 << 6);
+  // Enable PS2 Mouse
+  config |= (1 << 1);
   write_config(config);
 
   return true;

@@ -75,7 +75,7 @@
       return false;                                                            \
     }                                                                          \
     if (value) {                                                               \
-      *value = ctx->items[index];                                              \
+      memcpy(value, &ctx->items[index], sizeof(type));                         \
     }                                                                          \
     return true;                                                               \
   }                                                                            \

@@ -46,9 +46,9 @@ struct child_list {
 };
 
 struct namespace_override {
-	struct sv path;
-	struct vfs_fd *fd;
-	struct namespace_override *next;
+  struct sv path;
+  struct vfs_fd *fd;
+  struct namespace_override *next;
 };
 
 struct task {
@@ -72,6 +72,7 @@ struct task {
   struct kpoll *active_kpoll;
   struct wait wait;
 
+  u64 last_used;
   u64 sleep_until;
 
   struct namespace_override *namespace;
@@ -134,5 +135,7 @@ void task_msleep(u64 ms);
 err_t task_fd_pread(u64 fd, void *buffer, u64 count, size_t offset, u64 *out);
 err_t task_fd_pwrite(u64 fd, const void *buffer, u64 count, size_t offset,
                      u64 *out);
+err_t task_fd_sendfd(u64 fd, u64 inc_fd);
 err_t task_fd_recvfd(u64 fd, u64 *out_fd);
+err_t task_fd_fstat(u64 fd, struct stat *buf);
 #endif // TASK_H

@@ -15,7 +15,7 @@ u16 hertz;
 u16 pit_read_count(void) {
   u16 count = 0;
 
-  outb(PIT_IO_MODE_COMMAND, 0b0000000);
+  outb(PIT_IO_MODE_COMMAND, 0b0000010);
 
   count = inb(PIT_IO_CHANNEL_0);
   count |= ((u16)inb(PIT_IO_CHANNEL_0)) << 8;
@@ -59,7 +59,6 @@ void pit_set_count(u16 count) {
 void int_clock(struct cpu_status *r) {
   (void)r;
   eoi(0x20);
-  task_legacy_switch();
 }
 
 void pit_install(void) {

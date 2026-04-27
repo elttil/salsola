@@ -1,3 +1,4 @@
+#include <arch/amd64/acpi.h>
 #include <arch/amd64/apic.h>
 #include <arch/amd64/gdt.h>
 #include <arch/amd64/idt.h>
@@ -9,77 +10,30 @@
 #include <lock.h>
 #include <mmu.h>
 #include <string.h>
+#include <timer.h>
 #include <typedefs.h>
 
+#include <kprintf.h>
+
 lock_t smp_lock;
+lock_t smp_lock2;
+volatile size_t current_items = 0;
 
 // FIXME: Limited to 64 cores
 struct kernel_thread kernel_threads[MAX_CORES];
 
-struct ACPISDTHeader {
-  char Signature[4];
-  uint32_t Length;
-  uint8_t Revision;
-  uint8_t Checksum;
-  char OEMID[6];
-  char OEMTableID[8];
-  uint32_t OEMRevision;
-  uint32_t CreatorID;
-  uint32_t CreatorRevision;
-} __attribute__((packed));
-
-struct RSDT {
-  struct ACPISDTHeader h;
-  uint32_t PointerToOtherSDT[0]; // (h.Length - sizeof(h)) / 4;
-} __attribute__((packed));
-
-struct processor_local_apic {
-  u8 apic_processor_id;
-  u8 apic_id;
-  u32 flags;
-} __attribute__((packed));
-
-struct madt_entry {
-  u8 entry_type;
-  u8 record_length;
-  union {
-    struct processor_local_apic local_apic;
-  };
-};
-
-struct MADT {
-  struct ACPISDTHeader h;
-  u32 local_apic_address;
-  u32 flags;
-  struct madt_entry entries[0];
-} __attribute__((packed));
-
-struct RSDP_t {
-  char Signature[8];
-  uint8_t Checksum;
-  char OEMID[6];
-  uint8_t Revision;
-  uint32_t RsdtAddress;
-} __attribute__((packed));
-
-bool rsdp_checksum(u8 *src, size_t size) {
-  u8 r = 0;
-  for (size_t i = 0; i < size; i++, src++) {
-    r += *src;
-  }
-  return (0 == r);
-}
-
 u8 *lapic_ptr = NULL;
 
-void mdelay(int s) {
-  pit_sleep(5);
-  (void)s;
+void mdelay(u64 s) {
+  u64 start = timer_get_ms();
+  for (; timer_get_ms() - start < s;)
+    ;
 }
 
-void udelay(int s) {
-  pit_sleep(5);
-  (void)s;
+void udelay(u64 s) {
+  u64 start = timer_get_us();
+  for (; timer_get_us() - start < s;)
+    ;
 }
 
 volatile u8 bspdone = 0;
@@ -99,6 +53,8 @@ void enable_core(int core) {
 
   uint8_t bspid = bspid_get(); // BSP id and spinlock flag
                                // get the BSP's Local APIC ID
+  kprintf("bspid: %d\n", bspid);
+  kprintf("enbable core: %d\n", core);
 
   uint64_t cr3 = get_cr3();
   // uint64_t cr3;
@@ -148,25 +104,6 @@ void enable_core(int core) {
   // release the AP spinlocks
   bspdone = 1;
   // now you'll have the number of running APs in 'aprunning'
-}
-
-bool rsdt_find_signature(struct RSDT *rsdt, char *signature, void **out) {
-  int entries = (rsdt->h.Length - sizeof(rsdt->h)) / 4;
-
-  const size_t length = strlen(signature);
-  for (int i = 0; i < entries; i++) {
-    void *virtual = mmu_map_frames(
-        (void *)rsdt->PointerToOtherSDT[i], sizeof(struct ACPISDTHeader),
-        MMU_FLAG_PCD | MMU_FLAG_RW | MMU_FLAG_PRESENT);
-    struct ACPISDTHeader *h = (struct ACPISDTHeader *)virtual;
-    if (!strncmp(h->Signature, signature, length)) {
-      PTR_ASSIGN(out, h);
-      return true;
-    }
-    mmu_unmap_frames(virtual, sizeof(struct ACPISDTHeader), false);
-  }
-
-  return false;
 }
 
 void enable_core_asm(u64 rdi);

@@ -630,6 +630,6 @@ typedef struct {
   Elf64_Word vda_next;
 } Elf64_Verdaux;
 
-WARN_UNUSED err_t elf_open(struct sv file, struct vfs_fd **fd);
+WARN_UNUSED err_t elf_parse(struct vfs_fd *fd);
 WARN_UNUSED err_t elf_load_file(struct vfs_fd *fd, void **ds, void **entry);
 #endif

@@ -1,11 +1,11 @@
 #include <assert.h>
 #include <buffer.h>
 #include <drivers/framebuffer.h>
+#include <fonts.h>
 #include <fs/ramfs.h>
 #include <fs/vfs.h>
 #include <kprintf.h>
 #include <mmu.h>
-#include <fonts.h>
 
 #include <prng.h>
 
@@ -29,7 +29,8 @@ struct display_info vbe_info;
 
 void framebuffer_clear_screen(u32 color) {
   u32 *p = (u32 *)vbe_info.framebuffer;
-  for (u32 i = 0; i < vbe_info.framebuffer_width * vbe_info.framebuffer_height; i++, p++) {
+  for (u32 i = 0; i < vbe_info.framebuffer_width * vbe_info.framebuffer_height;
+       i++, p++) {
     *p = color;
   }
 }
@@ -134,7 +135,7 @@ bool display_driver_init(struct multiboot_tag_framebuffer_common *mbi) {
   vbe_info.framebuffer_physical = mbi->framebuffer_addr;
   vbe_info.framebuffer =
       mmu_map_frames((void *)mbi->framebuffer_addr, vbe_info.framebuffer_size,
-                     MMU_FLAG_RW | MMU_FLAG_PCD | MMU_FLAG_PRESENT);
+                     MMU_FLAG_RW | MMU_FLAG_PRESENT);
   if (!vbe_info.framebuffer) {
     return false;
   }
@@ -145,6 +146,5 @@ bool display_driver_init(struct multiboot_tag_framebuffer_common *mbi) {
 
   buffer_init(&vbe_info.buffer, vbe_info.framebuffer,
               vbe_info.framebuffer_size);
-
   return true;
 }

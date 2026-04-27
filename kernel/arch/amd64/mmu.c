@@ -89,16 +89,23 @@ err_t mmu_verify_user_c_string(const char *ptr, size_t *size) {
 
 struct mmu_directory orig_active_directory;
 
-#define NUM_OF_FRAMES 2048
+#define NUM_OF_FRAMES (4096 * 4)
 
+lock_t frame_lock;
 uint64_t frames[NUM_OF_FRAMES];
 size_t num_pages = 0;
 
-static inline bool set_frame(void *address, bool state) {
+static inline bool set_frame(void *address, bool state, bool getlock) {
+  if (getlock) {
+    lock_acquire(&frame_lock);
+  }
   uintptr_t a = (uintptr_t)address;
   a /= 0x1000;
   size_t index = a / 64;
   if (index >= NUM_OF_FRAMES) {
+    if (getlock) {
+      lock_release(&frame_lock);
+    }
     return false;
   }
   size_t offset = a % 64;
@@ -107,10 +114,35 @@ static inline bool set_frame(void *address, bool state) {
   } else {
     frames[index] &= ~((u64)1 << offset);
   }
+  if (getlock) {
+    lock_release(&frame_lock);
+  }
   return true;
 }
 
+u64 mmu_num_free_frames(void) {
+  u64 count = 0;
+  for (size_t i = 0; i < NUM_OF_FRAMES; i++) {
+    if (~((uint64_t)0) == frames[i]) {
+      continue;
+    }
+
+    for (size_t j = 0; j < 64; j++) {
+      // TODO: Fix this, it should be able to handle frame zero.
+      if (j == 0 && i == 0) {
+        continue;
+      }
+      if (frames[i] & ((u64)1 << j)) {
+        continue;
+      }
+      count++;
+    }
+  }
+  return count;
+}
+
 void *get_frame(bool allocate, u64 count) {
+  lock_acquire(&frame_lock);
   assert(0 != count);
   u64 left = count;
   void *rc = NULL;
@@ -137,15 +169,18 @@ void *get_frame(bool allocate, u64 count) {
       if (0 == left) {
         if (allocate) {
           uintptr_t ptr = (uintptr_t)rc;
-          for (u64 i = 0; i < count; i++) {
-            set_frame((void *)ptr, true);
+          for (u64 z = 0; z < count; z++) {
+            set_frame((void *)ptr, true, false);
             ptr += PAGE_SIZE;
           }
         }
+        assert(rc != 0);
+        lock_release(&frame_lock);
         return (void *)rc;
       }
     }
   }
+  lock_release(&frame_lock);
   assert(0);
   return NULL;
 }
@@ -256,14 +291,21 @@ void mmu_unmap_frames(void *src, u64 length, bool free_frames) {
     if (!page) {
       continue;
     }
+    if (0 == (*page & (~((uintptr_t)0xFFF)))) {
+      continue;
+    }
     if (free_frames) {
-      set_frame((void *)*page, false);
+      set_frame((void *)*page, false, true);
     }
     *page = (uintptr_t)NULL;
   }
   // FIXME: Possibly expensive operation that may be best to avoid
   // if unmap_frames is called multiple times.
   flush_tlb();
+}
+
+void mmu_free_directory(struct mmu_directory *dir) {
+  kfree(dir);
 }
 
 err_t mmu_setup_random_region(void *address, size_t length, bool is_userspace,
@@ -290,6 +332,7 @@ err_t mmu_setup_random_region(void *address, size_t length, bool is_userspace,
 
     if (allocate) {
       mmu_allocate_region((void *)address, length, flags);
+      flush_tlb();
     }
 
     ASSIGN_PTR(out, (void *)address);
@@ -311,30 +354,36 @@ void *ksbrk_physical(size_t length, void **physical, bool fake) {
   rc = heap_end;
 
   void *r = NULL;
-  for (size_t i = 0; i < length; i += 0x1000) {
-    void *physical;
+  /*  for (size_t i = 0; i < length; i += 0x1000) {
+      void *physical;
 
-    // TODO: Maybe do something different? Current "problem" is that the
-    // page table does get fully filled, but the regions are not
-    // actually used since the kernel does not stretch that far, so we
-    // can reuse them and save a lot of pain when it comes to
-    // preallocating a table. Currently it is just using this
-    // "bootstrapping" stage where it ignores if a region already is "in
-    // use" such that it can allocate new "unused" tables for later
-    // allocations. This does also mean some frames(and address space)
-    // get lost forever, but it **should** not be that much. Maybe
-    // allocate an extra table in boot.s to avoid this hack?
-    bool was_free = check_virtual_region_is_free(
-        heap_end, &physical, true, false, NULL,
-        MMU_FLAG_RW | MMU_FLAG_PRESENT |
-            ((fake) ? MMU_FLAG_FAKE_ALLOCATION : 0));
-    assert(was_free);
+      // TODO: Maybe do something different? Current "problem" is that the
+      // page table does get fully filled, but the regions are not
+      // actually used since the kernel does not stretch that far, so we
+      // can reuse them and save a lot of pain when it comes to
+      // preallocating a table. Currently it is just using this
+      // "bootstrapping" stage where it ignores if a region already is "in
+      // use" such that it can allocate new "unused" tables for later
+      // allocations. This does also mean some frames(and address space)
+      // get lost forever, but it **should** not be that much. Maybe
+      // allocate an extra table in boot.s to avoid this hack?
+      bool was_free = check_virtual_region_is_free(
+          heap_end, &physical, true, false, NULL,
+          MMU_FLAG_RW | MMU_FLAG_PRESENT |
+              ((fake) ? MMU_FLAG_FAKE_ALLOCATION : 0));
+      assert(was_free);
 
-    if (!r) {
-      r = physical;
-    }
-    heap_end += 0x1000;
-  }
+      if (!r) {
+        r = physical;
+      }
+      heap_end += 0x1000;
+    }*/
+  assert(mmu_allocate_region(heap_end, length,
+                             MMU_FLAG_RW | MMU_FLAG_PRESENT |
+                                 ((fake) ? MMU_FLAG_FAKE_ALLOCATION : 0)));
+
+  r = mmu_virtual_to_physical(rc, NULL);
+
   if (physical) {
     *physical = r;
   }
@@ -376,9 +425,6 @@ void *mmu_virtual_to_physical(void *address, bool *exists) {
             ->pdt[pdpt_index]
             ->physical[pdt_index] &
         MMU_FLAG_PRESENT)) {
-    return NULL;
-  }
-  if (!(directory->pml4t->physical[pml4t_index] & MMU_FLAG_PRESENT)) {
     return NULL;
   }
 
@@ -427,6 +473,7 @@ void *safe_allocation(size_t length, void **physical) {
 }
 
 bool allocate_pt(u64 pml4t_index, u64 pdpt_index, u64 pdt_index, u32 flags) {
+  flags |= MMU_FLAG_PRESENT;
   struct mmu_directory *directory = mmu_get_active_directory();
 
   if (!(directory->pml4t->physical[pml4t_index] & MMU_FLAG_PRESENT)) {
@@ -487,6 +534,7 @@ void allocate_next_pt(void *address, u32 flags) {
     return;
   }
   allocate_pt(pml4t_index, pdpt_index, pdt_index + 1, flags);
+  allocate_pt(pml4t_index, pdpt_index + 1, 0, flags);
 }
 
 static bool get_page2(void *address, bool allocate_parents, int flags,
@@ -638,6 +686,11 @@ bool mmu_check_fake_allocation(void *address, bool allocate) {
   uintptr_t a = (uintptr_t)*ptr;
   uintptr_t frame = a & ~((uintptr_t)0xFFF);
 
+  u8 flags = a & 0xFFF;
+  if (!(flags & MMU_FLAG_PRESENT)) {
+    return false;
+  }
+
   if (frame != NULL_FRAME) {
     return false;
   }
@@ -657,6 +710,16 @@ bool mmu_check_fake_allocation(void *address, bool allocate) {
 }
 
 bool mmu_allocate_region(void *address, size_t length, int flags) {
+  // NOTE: This is a simple fix for ELF files having strange alignment.
+  // This function is not intended to have it supplied non aligned
+  // addresses.
+  uintptr_t a = (uintptr_t)address;
+  if (0 != a % PAGE_SIZE) {
+    a &= ~0xFFF;
+    length += PAGE_SIZE;
+    address = (void *)a;
+  }
+
   if (flags & MMU_FLAG_FAKE_ALLOCATION) {
     assert(flags & MMU_FLAG_RW);
     for (size_t i = 0x0; i < length; i += PAGE_SIZE) {
@@ -664,8 +727,10 @@ bool mmu_allocate_region(void *address, size_t length, int flags) {
                                           NULL, true, true, NULL_FRAME,
                                           (flags & 0xF) | MMU_FLAG_PRESENT));
     }
+    flush_tlb();
+    assert(mmu_virtual_to_physical(address, NULL) == NULL_FRAME);
     memset(address, 0, PAGE_SIZE);
-    for (size_t i = 0x0; i < length; i += PAGE_SIZE) {
+    for (size_t i = 0x0; i < align_up_int(length, PAGE_SIZE); i += PAGE_SIZE) {
       volatile void **ptr;
       assert(get_page2(address + i, false, 0, (void ***)&ptr));
       uintptr_t a = (uintptr_t)*ptr;
@@ -676,10 +741,19 @@ bool mmu_allocate_region(void *address, size_t length, int flags) {
   }
 
   total_region_allocation += length;
+  size_t num_frames = length / PAGE_SIZE;
+  if (0 == num_frames) {
+    num_frames = 1;
+  }
+  void *frames = get_frame(true, num_frames);
   for (size_t i = 0x0; i < length; i += PAGE_SIZE) {
-    assert(check_virtual_region_is_free((void *)((uintptr_t)address + i), NULL,
-                                        true, false, NULL,
-                                        flags | MMU_FLAG_PRESENT));
+    //    assert(check_virtual_region_is_free((void *)((uintptr_t)address + i),
+    //    NULL,
+    //                                        true, false, NULL,
+    //                                        flags | MMU_FLAG_PRESENT));
+    assert(check_virtual_region_is_free(
+        (void *)((uintptr_t)address + i), NULL, true, true,
+        (void *)((uintptr_t)frames + i), flags | MMU_FLAG_PRESENT));
   }
   // TODO: Error check
   return true;
@@ -693,7 +767,7 @@ bool mmu_allocate_region(void *address, size_t length, int flags) {
 void mmu_update_stack(void (*function)()) {
   void *new_stack = (void *)0xffffff8000000000 - 0x1000 /*Guard page*/;
 
-  size_t stack_size = 0xA000;
+  size_t stack_size = 0xA000 + 0x4000;
 
   mmu_allocate_region(new_stack - stack_size, stack_size,
                       MMU_FLAG_RW | MMU_FLAG_PRESENT);
@@ -702,6 +776,7 @@ void mmu_update_stack(void (*function)()) {
 }
 
 void copy_frame(void *physical_dst, void *physical_src) {
+  void *e = heap_end;
   void *dst = mmu_map_frames((void *)((uintptr_t)physical_dst & (~0xFFF)),
                              PAGE_SIZE, MMU_FLAG_RW | MMU_FLAG_PRESENT);
   void *src = mmu_map_frames((void *)((uintptr_t)physical_src & (~0xFFF)),
@@ -716,6 +791,7 @@ void copy_frame(void *physical_dst, void *physical_src) {
 
   mmu_unmap_frames(dst, PAGE_SIZE, false);
   mmu_unmap_frames(src, PAGE_SIZE, false);
+  heap_end = e;
 }
 
 bool clone_pt(struct PT *orig_pt, struct PT **new_pt, void *virtual_address,
@@ -773,20 +849,22 @@ bool clone_pdpt(struct PDPT *orig_pdpt, struct PDPT **new_pdpt,
 
   for (int i = 0; i < 512; i++, virtual_address += MMU_PDT_RANGE) {
     int flags = orig_pdpt->physical[i] & 0xFFF;
-    if (!(flags & PAGE_FLAG_PRESENT)) {
+    if (!(flags & MMU_FLAG_PRESENT)) {
       continue;
     }
     assert(clone_pdt(orig_pdpt->pdt[i], &((*new_pdpt)->pdt[i]), virtual_address,
-                     (void **)&((*new_pdpt)->physical[i]), maps));
+                     (void **)&((*new_pdpt)->physical[i])));
     (*new_pdpt)->physical[i] |= flags;
   }
 
   return true;
 }
 
-struct mmu_directory *mmu_clone_directory(struct mmu_directory *directory,
-                                          struct list_memory_ctx *maps) {
-  struct mmu_directory *new_mmu_directory = ksbrk(sizeof(struct mmu_directory));
+struct mmu_directory *mmu_clone_directory(struct mmu_directory *directory) {
+  //  struct mmu_directory *new_mmu_directory = ksbrk(sizeof(struct
+  //  mmu_directory));
+  struct mmu_directory *new_mmu_directory =
+      kmalloc(sizeof(struct mmu_directory));
 
   void *physical;
   struct PML4T *pml4t = safe_allocation(sizeof(struct PML4T), &physical);
@@ -840,6 +918,7 @@ struct mmu_directory *mmu_get_active_directory(void) {
 }
 
 void set_stack_and_jump(void *, void *);
+void mmu_enable_write_protection(void);
 void mmu_init_for_new_core(void (*main)(void)) {
   // Since we currently have no idea what the bootstrapping core is,
   // search through the kernel_threads, find a valid directory and use
@@ -855,6 +934,7 @@ void mmu_init_for_new_core(void (*main)(void)) {
 
   // Set the directory now so we can do allocations
   mmu_set_directory(base_directory);
+  mmu_enable_write_protection();
 
   struct mmu_directory *new_directory = mmu_clone_directory(base_directory);
   if (!new_directory) {
@@ -873,13 +953,12 @@ void mmu_init_for_new_core(void (*main)(void)) {
 
 void set_frame_region(void *start, void *end, bool value) {
   for (uint32_t p = (uintptr_t)start; p < (uintptr_t)end; p += 0x1000) {
-    if (!set_frame((void *)p, value)) {
+    if (!set_frame((void *)p, value, true)) {
       break;
     }
   }
 }
 
-void mmu_enable_write_protection(void);
 int mmu_init(void *multiboot_header) {
   struct mmu_directory *active_directory = &orig_active_directory;
   kernel_threads[core_id_get()].active_directory = active_directory;
@@ -930,7 +1009,7 @@ int mmu_init(void *multiboot_header) {
                        true);
     }
   }
-  set_frame(NULL_FRAME, true);
+  set_frame(NULL_FRAME, true, true);
 
   for (size_t i = 0; i < 512; i++) {
     uintptr_t p = active_directory->pml4t->physical[i] + 0xFFFFFF8000000000;
@@ -943,7 +1022,7 @@ int mmu_init(void *multiboot_header) {
 
     for (size_t j = 0; j < 512; j++) {
       uintptr_t physical = pdpt->physical[j] & ~(0xFFF);
-      set_frame((void *)physical, true);
+      set_frame((void *)physical, true, true);
 
       uintptr_t p = pdpt->physical[j] + 0xFFFFFF8000000000;
       if (!(p & MMU_FLAG_PRESENT)) {
@@ -953,7 +1032,7 @@ int mmu_init(void *multiboot_header) {
       pdpt->pdt[j] = pdt;
       for (size_t c = 0; c < 512; c++) {
         uintptr_t physical = pdt->physical[c] & ~(0xFFF);
-        set_frame((void *)physical, true);
+        set_frame((void *)physical, true, true);
 
         uintptr_t p = pdt->physical[c] + 0xFFFFFF8000000000;
         if (!(p & MMU_FLAG_PRESENT)) {
@@ -966,15 +1045,15 @@ int mmu_init(void *multiboot_header) {
             break;
           }
           uintptr_t physical = pt->page[k] & ~(0xFFF);
-          set_frame((void *)physical, true);
+          set_frame((void *)physical, true, true);
         }
       }
     }
   }
-  set_frame(&PML4T, true);
+  set_frame(&PML4T, true, true);
 
   // FIXME: Shitty hack
-  for (size_t i = 0; i < 80; i++) {
+  for (size_t i = 0; i < 20; i++) {
     allocate_next_pt(heap_end + 0x1000 * 1024 * i,
                      MMU_FLAG_PRESENT | MMU_FLAG_RW);
   }

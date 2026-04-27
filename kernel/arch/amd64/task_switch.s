@@ -5,11 +5,13 @@ global weird_switch
 extern task_create_directory
 
 weird_switch:
+    cli
 	call weird_switch2
 	mov rax, [rdi+24]
 ;	mov rax, 0x1
 	ret
 weird_return:
+    cli
 	mov rax, 0x0
 	ret
 
@@ -43,6 +45,7 @@ weird_switch2:
 ; preserve: rbx, rsp, rbp, r12, r13, r14, and r15
 ; args: rdi, rsi
 switch_to_task:
+    cli
 	push rbx
 	push rbp
 	push r12

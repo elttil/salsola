@@ -1,3 +1,4 @@
+#include <arch/amd64/hpet.h>
 #include <arch/amd64/msr.h>
 #include <fs/ramfs.h>
 #include <fs/vfs.h>
@@ -8,8 +9,16 @@
 u64 tsc_mhz;
 u64 tsc_start;
 
-void timer_init(void) {
-  tsc_mhz = tsc_get_hz() / 10000;
+void timer_init(struct multiboot_tag *tags) {
+  tsc_mhz = hpet_get_tsc_mhz(tags);
+  if (0 == tsc_mhz) {
+    kprintf("HPET Failed\n");
+#ifdef REALHARDWARE_WORKAROUND
+    tsc_mhz = 1000;
+#else  // REALHARDARE_WORKAROUND
+    tsc_mhz = tsc_get_hz() / 10000;
+#endif // REALHARDARE_WORKAROUND
+  }
   tsc_start = rdtsc();
 }
 
@@ -17,10 +26,13 @@ u64 timer_get_ms(void) {
   return (rdtsc() - tsc_start) / (tsc_mhz * 1000);
 }
 
+u64 timer_get_us(void) {
+  return (rdtsc() - tsc_start) / (tsc_mhz);
+}
+
 err_t timer_read(struct vfs_fd *fd, void *buffer, size_t length, size_t offset,
                  size_t *rc) {
   (void)fd;
-  (void)offset;
 
   struct sb ctx;
   sb_init_buffer(&ctx, buffer, length);
@@ -39,7 +51,8 @@ bool timer_open(struct vfs_fd *fd, struct sv file, int flags,
   (void)flags;
   (void)internal_object;
   (void)err;
-  fd->type = VFS_TYPE_CHAR_DEVICE;
+  fd->type = VFS_TYPE_BLOCK_DEVICE;
+  // fd->type = VFS_TYPE_CHAR_DEVICE;
   fd->read = timer_read;
   //  fd->write = timer_write;
   return true;
