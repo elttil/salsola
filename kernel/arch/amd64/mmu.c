@@ -370,7 +370,7 @@ void *mmu_alloc_with_guardpage(size_t length) {
   if (ERROR_SUCCESS != err) {
     return NULL;
   }
-  void *rc = (void *)((uintptr_t)ptr + PAGE_SIZE);
+  void *rc = (void *)((uintptr_t)ptr + PAGE_SIZE + (l - length));
   assign_guardpage(ptr);
   assign_guardpage((void *)((uintptr_t)ptr + PAGE_SIZE + l));
   return rc;
@@ -756,8 +756,12 @@ bool mmu_check_fake_allocation(void *address, bool allocate) {
   uintptr_t a = (uintptr_t)*ptr;
   uintptr_t frame = a & ~((uintptr_t)0xFFF);
 
-  u8 flags = a & 0xFFF;
+  u16 flags = a & 0xFFF;
   if (!(flags & MMU_FLAG_PRESENT)) {
+    return false;
+  }
+
+  if (!(flags & MMU_FLAG_FAKE_ALLOCATION)) {
     return false;
   }
 
@@ -804,7 +808,9 @@ bool mmu_allocate_region(void *address, size_t length, int flags) {
       volatile void **ptr;
       assert(get_page2(address + i, false, 0, (void ***)&ptr));
       uintptr_t a = (uintptr_t)*ptr;
-      *ptr = (void *)(a & ~(MMU_FLAG_RW));
+      a |= MMU_FLAG_FAKE_ALLOCATION;
+      a &= ~(MMU_FLAG_RW);
+      *ptr = (void *)a;
     }
     flush_tlb();
     return true;

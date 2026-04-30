@@ -162,7 +162,8 @@ void kfree(void *p) {
     }
   }
 #endif // NO_SLAB
-  prng_get_pseudorandom((void *)p, mmu_get_guardpage_allocation_size(p));
+  size_t off = (uintptr_t)p % PAGE_SIZE;
+  prng_get_pseudorandom((void *)p - off, mmu_get_guardpage_allocation_size(p));
   mmu_free_guardpage_allocation(p);
   lock_release(&heap_lock);
 }
@@ -198,7 +199,7 @@ size_t get_mem_size(void *ptr) {
     }
   }
 #endif // NO_SLAB
-  return mmu_get_guardpage_allocation_size(ptr);
+  return mmu_get_guardpage_allocation_size(ptr) - ((uintptr_t)ptr % PAGE_SIZE);
 }
 
 void *krealloc(void *ptr, size_t size) {
