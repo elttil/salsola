@@ -4,5 +4,9 @@ AS=nasm
 AR=x86_64-salsola-ar
 
 INSTALL_DIR=/home/pebkac/prj/salsola/sysroot/bin
-CFLAGS=-ffreestanding -nostdlib -I../../sysroot/usr/include/
-LDFLAGS=-ffreestanding -nostdlib -L../../sysroot/lib/ -lc
+#CFLAGS=-ffreestanding -nostdlib -I../../sysroot/usr/include/
+#LDFLAGS=-ffreestanding -nostdlib -L../../sysroot/lib/ -lc
+#CFLAGS= -O3 -flto -g
+#LDFLAGS= -O3 -flto -g
+CFLAGS= -g #-fsanitize=vla-bound,shift-exponent,pointer-overflow,shift,signed-integer-overflow,bounds
+LDFLAGS= -g

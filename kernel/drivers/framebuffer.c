@@ -125,6 +125,9 @@ bool framebuffer_add_device(struct sv filename) {
 bool display_driver_init(struct multiboot_tag_framebuffer_common *mbi) {
   vbe_info.framebuffer_width = mbi->framebuffer_width;
   vbe_info.framebuffer_height = mbi->framebuffer_height;
+  //  vbe_info.framebuffer_width = 1280;
+  //  vbe_info.framebuffer_width = 1920;
+  //  vbe_info.framebuffer_height = 853;
 
   u32 bits_pp = mbi->framebuffer_bpp;
   u32 bytes_pp = (bits_pp / 8) + (8 - (bits_pp % 8));

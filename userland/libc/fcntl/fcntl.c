@@ -1,15 +1,10 @@
+#include <errno.h>
 #include <fcntl.h>
 #include <stdarg.h>
 #include <syscall.h>
-
-#include <todo.h>
+#include <syscalls.h>
 
 int fcntl(int fd, int cmd, ...) {
-  (void)fd;
-  (void)cmd;
-  TODO("fcntl");
-  return 0;
-  /*
   int arg = 0;
 
   if ((F_GETFL == cmd) || (F_SETFL == cmd)) {
@@ -18,6 +13,10 @@ int fcntl(int fd, int cmd, ...) {
     arg = va_arg(ap, int);
     va_end(ap);
   }
-  RC_ERRNO(syscall(SYS_FCNTL, fd, cmd, arg, 0, 0));
-  */
+  err_t err = syscall(SYS_FCNTL, fd, cmd, arg, 0, 0);
+  if (ERROR_SUCCESS != err) {
+    errno = error_to_errno(err);
+    return -1;
+  }
+  return 0;
 }

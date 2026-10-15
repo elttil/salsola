@@ -6,19 +6,24 @@
 
 #define KEVENT_CAN_READ (1 << 0)
 #define KEVENT_CAN_WRITE (1 << 1)
+#define KEVENT_IS_CLOSED (1 << 2)
 
 #define KEVENT_NOP_FD 0
 #define KEVENT_ADD_FD 1
 #define KEVENT_MOD_FD 2
+#define KEVENT_DEL_FD 3
 #define KEVENT_KERNEL_RETURN 3
 
 struct kevent {
   u64 fd;
+  void *object;
   u8 flags;
   u8 mod;
+  u8 object_type;
 };
 
-err_t kpoll(u64 fd, struct kevent *events, size_t nevents, size_t *nchanges);
+err_t kpoll(u64 fd, struct kevent *events, size_t nevents, size_t *nchanges,
+            i32 timeout);
 
 #ifdef KERNEL
 #include <fs/vfs.h>
@@ -27,6 +32,7 @@ err_t kpoll(u64 fd, struct kevent *events, size_t nevents, size_t *nchanges);
 struct listener {
   lock_t lock;
   u64 num_fd;
+  void *object;
 
   // NOTE: These pointers shall be NULL before they are freed. As a
   // result a simple lock on this structure ensures that the pointers
@@ -37,6 +43,7 @@ struct listener {
   u8 flags;
 
   bool has_sent_update;
+  u8 object_type;
 };
 
 DEFINE_LIST_STRUCT(list_listener, struct listener *)
@@ -47,6 +54,8 @@ struct kpoll {
   // descriptor the caller is looking for.(Currently it is O(n))
   struct list_listener_ctx list;
   struct list_listener_ctx updates;
+  u32 timeout;
+  bool has_timeout;
 };
 
 bool kpoll_add_device(void);

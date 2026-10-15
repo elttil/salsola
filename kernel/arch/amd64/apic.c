@@ -5,6 +5,8 @@
 #include <mmu.h>
 #include <stddef.h>
 
+#include <kprintf.h>
+
 #define IA32_APIC_BASE_MSR 0x1B
 #define IA32_APIC_BASE_MSR_BSP 0x100 // Processor is a BSP
 #define IA32_APIC_BASE_MSR_ENABLE 0x800
@@ -75,7 +77,8 @@ static void apic_start_timer() {
   apic_register_write(APIC_REGISTER_TIMER_DIV, 0x3);
 
   // TODO: Use the correct number
-  uint32_t ticksIn10ms = 0x10000;
+  uint32_t ticksIn10ms = 0x1000;
+  // uint32_t ticksIn10ms = 0x100000;
 
   // Start timer as periodic on IRQ 0, divider 16, with the number of ticks we
   // counted
@@ -87,10 +90,12 @@ static void apic_start_timer() {
 
 void int_apic_clock(struct cpu_status *r) {
   apic_register_write(APIC_REGISTER_EOI, 0);
+  //  kmalloc_scan();
   bool is_kernel = (0x08 == r->iret_cs);
   if (is_kernel) {
     return;
   }
+  __asm__("cli");
   task_legacy_switch();
 }
 

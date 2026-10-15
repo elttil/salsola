@@ -2,6 +2,8 @@
 QEMU=~/prj/qemu-10.1.0/build/qemu-system-x86_64
 #QEMU=qemu-system-x86_64
 
+CC=x86_64-salsola-gcc
+
 DISK_IMG=./meta/disk.img
 LOG_FILE=./logs/serial.log
 ISO_FILE=./kernel/salsola.iso

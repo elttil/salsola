@@ -41,15 +41,7 @@ int debug_vprintf(const char *fmt, va_list ap) {
   if (0 > rc) {
     return -1;
   }
-  write(2, buffer, rc);
-
-  /*
-  static int serial_fd = -1;
-  if (-1 == serial_fd) {
-    serial_fd = open("/dev/serial", O_RDWR);
-  }
-  write(serial_fd, buffer, rc);
-  */
+  write(open("/dev/serial", O_WRITE), buffer, rc);
   return rc;
 }
 
@@ -62,12 +54,9 @@ int debug_printf(const char *fmt, ...) {
 }
 
 static void *memalloc(size_t length) {
-  //(void)length;
   void *out = NULL;
   assert(ERROR_SUCCESS ==
          sa_mmap(NULL, length, 0 /*TODO prot*/, MAP_ANONYMOUS, 0, 0, &out));
-  //  assert(ERROR_SUCCESS ==
-  //         sa_mmap((void *)0x41, 0x42, 0x43, 0x44, 0x45, 0x46, (void *)0x47));
   return out;
 }
 
@@ -143,6 +132,7 @@ MallocHeader *find_free_entry(uintptr_t s) {
   if (!malloc_head) {
     init_heap();
   }
+  assert(malloc_head);
   MallocHeader *p = malloc_head;
   for (; p; p = next_header(p)) {
     assert(p->magic == 0xdde51ab9410268b1);

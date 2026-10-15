@@ -8,6 +8,9 @@
 *.tar.xz*
 *.sig*
 *.sig*
+*.old
+*.swp
+*.un~
 toolchain/build-gcc/
 toolchain/build-binutils/
 toolchain/*/

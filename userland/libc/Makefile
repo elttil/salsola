@@ -10,15 +10,16 @@ ERRNO_OBJ=errno/error_to_errno.o errno/errno.o
 FCNTL_OBJ=fcntl/fcntl.o fcntl/open.o
 DIRENT_OBJ=dirent/opendir.o dirent/readdir.o dirent/scandir.o dirent/closedir.o
 ASSERT_OBJ=assert/assert.o
-UNISTD_OBJ=unistd/write.o unistd/close.o unistd/lseek.o unistd/sbrk.o unistd/read.o unistd/fork.o unistd/execvp.o unistd/sa_exec.o unistd/dup2.o unistd/execv.o unistd/pipe.o unistd/sa_pipe.o unistd/getpid.o unistd/sa_chdir.o unistd/chdir.o unistd/getcwd.o unistd/getopt.o unistd/sa_exec_env.o unistd/ftruncate.o unistd/sa_bindfd.o unistd/msleep.o unistd/pwrite.o unistd/pread.o unistd/sa_pwrite.o unistd/sa_pread.o unistd/recvfd.o
+UNISTD_OBJ=unistd/write.o unistd/close.o unistd/lseek.o unistd/sbrk.o unistd/read.o unistd/fork.o unistd/execvp.o unistd/sa_exec.o unistd/dup2.o unistd/execv.o unistd/pipe.o unistd/sa_pipe.o unistd/getpid.o unistd/sa_chdir.o unistd/chdir.o unistd/getcwd.o unistd/getopt.o unistd/sa_exec_env.o unistd/ftruncate.o unistd/sa_bindfd.o unistd/msleep.o unistd/pwrite.o unistd/pread.o unistd/sa_pwrite.o unistd/sa_pread.o unistd/recvfd.o unistd/sendfd.o
 MALLOC_OBJ=malloc/malloc.o
-MATH_OBJ=math/fmin.o math/ldexp.o math/sqrt.o math/fabs.o math/cos.o math/ceil.o math/acos.o math/pow.o math/fmod.o math/floor.o math/__math_oflow.o math/exp_data.o math/pow_data.o math/__cos.o math/__sin.o math/__rem_pio2.o math/__rem_pio2_large.o math/scalbn.o math/__math_uflow.o math/__math_xflow.o math/__math_invalid.o
-TB_OBJ=tb/sv.o tb/sb.o tb/sha1.o
+ARPA_OBJ=arpa/inet/htons.o arpa/inet/ntohl.o arpa/inet/htonl.o arpa/inet/ntohs.o
+MATH_OBJ=math/fmin.o math/ldexp.o math/sqrt.o math/fabs.o math/cos.o math/ceil.o math/acos.o math/pow.o math/fmod.o math/floor.o math/__math_oflow.o math/exp_data.o math/pow_data.o math/__cos.o math/__sin.o math/__rem_pio2.o math/__rem_pio2_large.o math/scalbn.o math/__math_uflow.o math/__math_xflow.o math/__math_invalid.o math/floorf.o math/modf.o math/sin.o math/tanf.o math/__tandf.o math/__rem_pio2f.o math/roundf.o
+TB_OBJ=tb/sv.o tb/sb.o tb/sha1.o tb/ringbuffer.o
 SYS_OBJ=sys/random/randomfill.o sys/random/sarandom.o sys/mman/mmap.o sys/stat/stat.o sys/stat/fstat.o sys/kpoll.o sys/waitfd.o sys/wait.o sys/stat/mkdir.o
 
 CTYPE_OBJ=ctype/isalnum.o ctype/isblank.o ctype/isgraph.o ctype/ispunct.o ctype/isxdigit.o ctype/isalpha.o ctype/iscntrl.o ctype/islower.o ctype/isspace.o ctype/tolower.o ctype/isascii.o  ctype/isdigit.o  ctype/isprint.o  ctype/isupper.o  ctype/toupper.o
 
-OBJ=crti.o crt0.o crt1.o crtn.o systemcall.o setup.o ubsan.o $(STDIO_OBJ) $(STRING_OBJ) $(UNISTD_OBJ) $(ERRNO_OBJ) $(FCNTL_OBJ) $(ASSERT_OBJ) $(MALLOC_OBJ) $(SYS_OBJ) $(MATH_OBJ) $(TB_OBJ) $(CTYPE_OBJ) $(STDLIB_OBJ) $(DIRENT_OBJ)
+OBJ=crti.o crt0.o crt1.o crtn.o systemcall.o setup.o ubsan.o $(STDIO_OBJ) $(STRING_OBJ) $(UNISTD_OBJ) $(ERRNO_OBJ) $(FCNTL_OBJ) $(ASSERT_OBJ) $(MALLOC_OBJ) $(SYS_OBJ) $(MATH_OBJ) $(TB_OBJ) $(CTYPE_OBJ) $(STDLIB_OBJ) $(DIRENT_OBJ) $(ARPA_OBJ)
 all: libc.a crt0.o
 
 %.o: %.c

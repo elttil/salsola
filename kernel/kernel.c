@@ -179,6 +179,9 @@ void kmain2(void) {
 
   apic_timer_install();
 
+  //  void *ptr = kmalloc(0x500);
+  //  memset(ptr, 1, 0x501);
+
   kprintf("Kernel star time until /init: %dms\n", timer_get_ms());
 
   log_disable_screen();

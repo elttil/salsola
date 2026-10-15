@@ -2,8 +2,8 @@ All code written(with exception to code in the math/ directory) is
 licensed under "Zero Clause BSD" OR "Unlicense" OR "MIT"(you are free to
 chose) unless otherwise noted.
 Certain files in math/ are taken from musl libc(which has taken things
-from FreeBSD and other systems) and it is noted in the .c/.h file if
-they are.
+from FreeBSD and other systems) it is usually noted in the .c/.h file if
+they are. bits/alltypes.h is also taken from musl
 
 The musl license is the following:
 musl as a whole is licensed under the following standard MIT license:

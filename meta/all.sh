@@ -5,6 +5,4 @@ cd ..
 
 source meta/env.sh
 
-./meta/build.sh
-./meta/install.sh
-./meta/run.sh
+./meta/build.sh && ./meta/install.sh && ./meta/run.sh

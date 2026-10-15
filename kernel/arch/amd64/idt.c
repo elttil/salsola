@@ -2,6 +2,7 @@
 #include <arch/amd64/smp.h>
 #include <io.h>
 #include <kprintf.h>
+#include <log.h>
 #include <stddef.h>
 #include <string.h>
 #include <typedefs.h>
@@ -221,6 +222,12 @@ void page_fault(struct cpu_status *r) {
   if (mmu_check_fake_allocation((void *)cr2_get(), true)) {
     return;
   }
+  // bool is_kernel = (0x08 == r->iret_cs);
+  //   if (!is_kernel) {
+  //     task_exit(1 /*TODO: What should the exit code for a SEGFAULT be?*/);
+  //     return;
+  //   }
+
   log_enable_screen();
   lock_acquire(&lock_fault);
   (void)r;

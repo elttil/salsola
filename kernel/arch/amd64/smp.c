@@ -70,7 +70,15 @@ void enable_core(int core) {
   if (core == bspid) { // FIXME: Incorrect
     return;
   }
+  kprintf("wait for acquire\n");
+#if 1
+  lock_acquire(&smp_lock2);
+#else
   lock_acquire(&smp_lock);
+  current_items++;
+  lock_release(&smp_lock);
+#endif
+  kprintf("done with acquire\n");
   // #endif
   //   send INIT IPI
 
@@ -124,20 +132,30 @@ void core_main() {
   setup_gs();
   set_kernel_stack((void *)0xffffff8000000000 - 0x1000 /*Guard page*/);
   setup_syscall();
+#if 1
+  lock_release(&smp_lock2);
+#else
+  lock_acquire(&smp_lock);
+  current_items--;
   lock_release(&smp_lock);
+#endif
   mmu_remove_identity();
 
   __asm__("cli");
 
+  kprintf("wait for task head\n");
   for (; !get_task_head();)
     ;
 
   __asm__("cli");
+  kprintf("new core init\n");
   task_new_core_init();
 
+  kprintf("apic enable\n");
   // TODO: Is this required?
   apic_enable();
   apic_timer_install();
+  kprintf("switch\n");
 
   u64 i = 0;
   for (;; i++) {
@@ -187,11 +205,36 @@ void smp_init(struct multiboot_tag *tags) {
     for (struct madt_entry *p = madt->entries;
          ((uintptr_t)p - (uintptr_t)madt) < madt->h.Length;) {
       if (0 == p->entry_type) {
+        kprintf("NEXT ONE: %d\n", current_items);
+        //        if (3 == p->local_apic.apic_processor_id ||
+        //            2 == p->local_apic.apic_processor_id) {
+        p = (struct madt_entry *)((uintptr_t)p + p->record_length);
+        //          continue;
+        //        }
         enable_core(p->local_apic.apic_processor_id);
+        kprintf("current_items: %d\n", current_items);
       }
 
       p = (struct madt_entry *)((uintptr_t)p + p->record_length);
     }
   }
+  kprintf("DONE---------------\n");
+#if 1
+  lock_acquire(&smp_lock2);
+#else
   lock_acquire(&smp_lock);
+  current_items--;
+  lock_release(&smp_lock);
+#endif
+  kprintf("done with acquire\n");
+  /*  for (;;) {
+      lock_acquire(&smp_lock);
+      if (0 == current_items) {
+        kprintf("current_items: %d\n", current_items);
+        lock_release(&smp_lock);
+        break;
+      }
+      lock_release(&smp_lock);
+    }
+  */
 }

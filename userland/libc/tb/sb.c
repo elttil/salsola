@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <tb/sb.h>
+#include <unistd.h>
 
 #define DEFAULT_CAPACITY 256
 
@@ -130,6 +131,36 @@ int sb_prepend_buffer(struct sb *ctx, const void *buffer, size_t length) {
   memcpy(ctx->string, buffer, length);
   ctx->length += length;
   return 1;
+}
+
+int sb_read_all(struct sb *ctx, int fd) {
+  int rc = 0;
+  for (;;) {
+    int r = sb_read(ctx, fd, 8192);
+    if (-1 == r) {
+      if (EWOULDBLOCK == errno || EINTR == errno) {
+        continue;
+      }
+      return -1;
+    }
+    if (0 == r) {
+      break;
+    }
+    rc += r;
+  }
+  return rc;
+}
+
+int sb_read(struct sb *ctx, int fd, size_t size) {
+  if (!sb_increase_buffer(ctx, size)) {
+    return 0;
+  }
+  int rc = read(fd, ctx->string + ctx->length, size);
+  if (-1 == rc) {
+    return -1;
+  }
+  ctx->length += rc;
+  return rc;
 }
 
 int sb_append_buffer(struct sb *ctx, const void *buffer, size_t length) {

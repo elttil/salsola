@@ -18,6 +18,8 @@ sudo cp -r ./sysroot/bin/ ./mount/
 sudo cp -r ./sysroot/script.sh ./mount/
 sudo cp -r ./sysroot/init.sh ./mount/
 sudo cp -r ./sysroot/font.ttf ./mount/
+#sudo cp -r ./sysroot/doom1.wad ./mount/
+sudo cp -r ~/prj/sbos/sysroot/doom1.wad ./mount/
 
 #yes | rm -r ./mount/lib/gcc/
 
@@ -28,5 +30,5 @@ resize2fs $RAMDISK_PATH
 
 cd kernel/
 ./nob -clean
-./nob -ramdisk || exit 1
+./nob -ramdisk -small -compress || exit 1
 cd ..

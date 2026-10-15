@@ -6,7 +6,9 @@
 void *memchr(const void *s, int c, size_t n);
 char *strerror(int errnum);
 void *memset(void *s, int c, size_t n);
+volatile void *memset_v(volatile void *s, int c, size_t n);
 void *memcpy(void *dest, const void *src, uint32_t n);
+volatile void *memcpy_v(volatile void *dest, const volatile void *src, uint32_t n);
 int strcmp(const char *s1, const char *s2);
 char *strcpy(char *dest, const char *src);
 size_t strlen(const char *s);

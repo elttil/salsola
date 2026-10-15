@@ -11,6 +11,8 @@
 #include <sv.h>
 #include <sys/mman.h>
 
+#include <kprintf.h>
+
 bool active_bootstrap = true;
 
 void flush_tlb(void);
@@ -196,6 +198,7 @@ void allocate_next_pt(void *address, u32 flags);
 
 void *heap_end;
 
+void dump_backtrace(u32 max_frames);
 bool mmu_is_region_free(void *address, size_t length) {
   for (size_t i = 0; i < length; i += PAGE_SIZE) {
     void *ptr = (void *)((uintptr_t)address + i);
@@ -348,6 +351,7 @@ void mmu_free_guardpage_allocation(void *ptr) {
 size_t mmu_get_guardpage_allocation_size(void *ptr) {
   size_t s = 0;
   uintptr_t p = (uintptr_t)ptr;
+  p -= p % PAGE_SIZE;
   for (;;) {
     volatile void **pg;
     assert(get_page2((void *)p, false, 0, (void ***)&pg));
@@ -1135,6 +1139,7 @@ int mmu_init(void *multiboot_header) {
   }
 
   mmu_enable_write_protection();
+  kprintf("start num_free_frames: %d\n", mmu_num_free_frames());
 
   flush_tlb();
   return 1;

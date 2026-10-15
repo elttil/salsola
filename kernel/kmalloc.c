@@ -54,11 +54,11 @@ struct slab {
 #define SLAB(s) {.object_size = s}
 
 struct slab slabs[] = {
-    SLAB(16), SLAB(32), SLAB(64), SLAB(128), SLAB(160), SLAB(256),
+    SLAB(16), SLAB(32), SLAB(64), SLAB(128), SLAB(160), SLAB(256), SLAB(1024),
 };
 
 void slab_init(struct slab *slab) {
-  slab->object_count = 64 * 8;
+  slab->object_count = 64 * 8 * 8;
 
   size_t s = slab->object_size * slab->object_count;
   slab->bitmap = kcalloc(slab->object_count / 64, sizeof(u64));

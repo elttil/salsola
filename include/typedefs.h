@@ -6,7 +6,7 @@
 #define likely(expr) __builtin_expect(!!(expr), 1)
 
 #define PTR_ASSIGN(ptr, value)                                                 \
-  if ((ptr)) {                                                                   \
+  if ((ptr)) {                                                                 \
     *(ptr) = (value);                                                          \
   }
 
@@ -19,6 +19,8 @@ typedef int8_t i8;
 typedef int16_t i16;
 typedef int32_t i32;
 typedef int64_t i64;
+
+typedef u64 fd_t;
 
 typedef union {
   u32 d;

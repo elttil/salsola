@@ -35,11 +35,11 @@ double floor(double x);
 double scalbn(double, int);
 
 // the rest is taken from musl libc
-#define FP_NAN       0
-#define FP_INFINITE  1
-#define FP_ZERO      2
+#define FP_NAN 0
+#define FP_INFINITE 1
+#define FP_ZERO 2
 #define FP_SUBNORMAL 3
-#define FP_NORMAL    4
+#define FP_NORMAL 4
 
 int __fpclassify(double);
 int __fpclassifyf(float);

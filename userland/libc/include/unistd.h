@@ -68,4 +68,7 @@ ssize_t pread(int fd, void *buf, size_t count, off_t offset);
 
 err_t sa_recvfd(u64 fd, u64 *out_fd);
 int recvfd(int fd);
+
+err_t sa_sendfd(u64 fd, u64 inc_fd);
+int sendfd(int fd, int inc_fd);
 #endif

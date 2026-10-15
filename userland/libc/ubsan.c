@@ -67,3 +67,10 @@ void __ubsan_handle_vla_bound_not_positive(struct OutOfBoundsData *data,
   (void)index;
   ubsan_log("handle_vla_bound_not_positive", data->location);
 }
+
+void __ubsan_handle_type_mismatch_v1(struct OutOfBoundsData *data,
+                                     void *index) {
+  (void)index;
+  ubsan_log("__ubsan_handle_type_mismatch_v1", data->location);
+}
+
